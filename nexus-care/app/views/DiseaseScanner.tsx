@@ -18,57 +18,71 @@ export default function DiseaseScanner() {
   const [status, setStatus] = useState<string>("Compiling AI runtime...");
   const [result, setResult] = useState<string>("Pending...");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [currentDisease, setCurrentDisease] =
+    useState<ScannableDisease>("Burns");
+  const DISEASE_CLASSES = {
+    Stroke: ["Stroke", "Undetermined", "Not a Stroke"],
+    Burns: [
+      "First-degree burns",
+      "Normal",
+      "Second-degree burns",
+      "Third-degree burns",
+    ],
+  } as const;
 
   // 1. Initialize the LiteRT WebAssembly runtime and load the model on mount
-  useEffect(() => {
-    async function setupApp() {
+  async function setupApp() {
+    try {
+      // Initialize the LiteRT WebAssembly runtime components from CDN
+      if (!window.__litert_initialized) {
+        setStatus("Compiling AI runtime...");
+        await loadLiteRt("https://cdn.jsdelivr.net/npm/@litertjs/core/wasm/", {
+          jspi: true,
+        });
+        window.__litert_initialized = true; // Mark as successfully mounted
+      }
+
+      // Load the converted .tflite file from your public folder
+      let compiledModel: CompiledModel;
+      let tfliteModel: string =
+        currentDisease === "Stroke"
+          ? "/stroke_model.tflite"
+          : "/burns_model.tflite";
       try {
-        // Initialize the LiteRT WebAssembly runtime components from CDN
-        if (!window.__litert_initialized) {
-          setStatus("Compiling AI runtime...");
-          await loadLiteRt(
-            "https://cdn.jsdelivr.net/npm/@litertjs/core/wasm/",
-            { jspi: true },
-          );
-          window.__litert_initialized = true; // Mark as successfully mounted
-        }
+        setStatus("Attempting WebGPU compilation...");
+        // Try high-performance GPU mode first
+        compiledModel = await loadAndCompile(tfliteModel, {
+          accelerator: "webgpu",
+        });
+        setStatus("Ready! Using WebGPU acceleration.");
+      } catch (webGpuError: unknown) {
+        console.warn(
+          "WebGPU initialization failed, falling back to WASM:",
+          webGpuError,
+        );
+        setStatus("Compiling fallback CPU environment...");
 
-        // Load the converted .tflite file from your public folder
-        let compiledModel: CompiledModel;
-        try {
-          setStatus("Attempting WebGPU compilation...");
-          // Try high-performance GPU mode first
-          compiledModel = await loadAndCompile("/stroke_model.tflite", {
-            accelerator: "webgpu",
-          });
-          setStatus("Ready! Using WebGPU acceleration.");
-        } catch (webGpuError: unknown) {
-          console.warn(
-            "WebGPU initialization failed, falling back to WASM:",
-            webGpuError,
-          );
-          setStatus("Compiling fallback CPU environment...");
+        // Fall back to universal WebAssembly CPU mode
+        compiledModel = await loadAndCompile(tfliteModel, {
+          accelerator: "wasm",
+        });
+        setStatus("Ready! Using WebAssembly CPU fallback.");
+      }
 
-          // Fall back to universal WebAssembly CPU mode
-          compiledModel = await loadAndCompile("/stroke_model.tflite", {
-            accelerator: "wasm",
-          });
-          setStatus("Ready! Using WebAssembly CPU fallback.");
-        }
+      setModel(compiledModel);
 
-        setModel(compiledModel);
-
+      setStatus("Ready! Upload an image to analyze.");
+    } catch (error: any) {
+      console.error("LiteRT Load error:", error);
+      // Fallback: If it's just a StrictMode initialization warning, let the user proceed
+      if (error?.message && error.message.includes("already loading")) {
         setStatus("Ready! Upload an image to analyze.");
-      } catch (error: any) {
-        console.error("LiteRT Load error:", error);
-        // Fallback: If it's just a StrictMode initialization warning, let the user proceed
-        if (error?.message && error.message.includes("already loading")) {
-          setStatus("Ready! Upload an image to analyze.");
-        } else {
-          setStatus("Error loading AI engine.");
-        }
+      } else {
+        setStatus("Error loading AI engine.");
       }
     }
+  }
+  useEffect(() => {
     setupApp();
   }, []);
 
@@ -145,17 +159,35 @@ export default function DiseaseScanner() {
       const maxScoreIdx = scores.indexOf(Math.max(...scores));
 
       // 4. Update the state with the string prediction (must match your dataset folders!)
-      const classes = ["Stroke", "Undetermined", "Not a Stroke"];
+      const classes = DISEASE_CLASSES[currentDisease];
       setResult(classes[maxScoreIdx]);
       setStatus("Scan complete!");
     };
   };
 
+  const diseaseKeys = Object.keys(DISEASE_CLASSES) as ScannableDisease[];
   return (
     <section id="stroke-scanner">
+      <div className="flex flex-row flex-none items-center justify-center mb-4 gap-x-3">
+        <label>Disease: </label>
+        {diseaseKeys.map((disease) => (
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            key={disease}
+            onClick={() => {
+              setCurrentDisease(disease);
+              setImagePreview(null);
+              setResult("Pending...");
+              setupApp();
+            }}
+          >
+            {disease}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-col items-center justify-center p-6 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 max-w-md mx-auto">
         <h2 className="text-xl font-bold mb-1 text-zinc-900 dark:text-zinc-100">
-          Stroke Scanner
+          {`${currentDisease} Scanner`}
         </h2>
         <p className="text-sm font-medium text-zinc-500 mb-6">
           Status:{" "}
