@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@litertjs/core": "^2.5.3",
-    "lucide-react": "^1.58.0"
+    "lucide-react": "^1.58.0",
+    "next": "^16.4.2"
   }
 }
