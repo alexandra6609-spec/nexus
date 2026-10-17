@@ -5,6 +5,8 @@ import type {
   LedgerEntry,
   StockReport,
   Transfer,
+  TriageToken,
+  TriageTokenData,
 } from "./types";
 
 /**
@@ -47,14 +49,30 @@ export function normalizeReport(data: unknown): StockReport {
   };
 }
 
+/** Token data comes from the hub over the air: check it like any outside input. */
+function readToken(data: unknown): TriageTokenData | null {
+  const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
+  if (typeof d.code !== "string" || (d.level !== "RED" && d.level !== "YELLOW")) return null;
+  return {
+    code: d.code,
+    level: d.level,
+    clinic: typeof d.clinic === "string" ? d.clinic : null,
+    area: typeof d.area === "string" ? d.area : null,
+    summary: typeof d.summary === "string" ? d.summary : "",
+    expiresAt: typeof d.expiresAt === "number" ? d.expiresAt : 0,
+  };
+}
+
 /** Fold the ledger into what the screens show. Pure, so it is easy to test. */
 export function deriveState(
   entries: Iterable<LedgerEntry>,
   directory: ClinicProfile[] = PLACES
-): { clinics: Clinic[]; transfers: Transfer[] } {
+): { clinics: Clinic[]; transfers: Transfer[]; tokens: TriageToken[] } {
   const latestStock = new Map<string, StockEntry>();
   const transfers = new Map<string, Transfer>();
   const statusUpdates: Extract<LedgerEntry, { kind: "transfer.status" }>[] = [];
+  const tokens = new Map<string, TriageToken>();
+  const arrivals: Extract<LedgerEntry, { kind: "triage.arrived" }>[] = [];
 
   for (const entry of entries) {
     if (entry.kind === "stock.declared") {
@@ -73,7 +91,19 @@ export function deriveState(
       });
     } else if (entry.kind === "transfer.status") {
       statusUpdates.push(entry);
+    } else if (entry.kind === "triage.token") {
+      const data = readToken(entry.data);
+      if (data) tokens.set(entry.id, { ...data, id: entry.id, issuedAt: entry.ts, arrived: null });
+    } else if (entry.kind === "triage.arrived") {
+      arrivals.push(entry);
     }
+  }
+
+  // First recorded arrival wins, so two desks marking the same patient agree.
+  arrivals.sort(compareEntries);
+  for (const arrival of arrivals) {
+    const token = tokens.get(arrival.data.tokenId);
+    if (token && !token.arrived) token.arrived = { clinicId: arrival.clinicId, at: arrival.ts };
   }
 
   statusUpdates.sort(compareEntries);
@@ -93,10 +123,20 @@ export function deriveState(
     transfers: [...transfers.values()].sort(
       (a, b) => b.createdAt - a.createdAt
     ),
+    tokens: [...tokens.values()].sort(
+      (a, b) =>
+        Number(b.level === "RED") - Number(a.level === "RED") || b.issuedAt - a.issuedAt
+    ),
   };
 }
 
-const KINDS = ["stock.declared", "transfer.requested", "transfer.status"];
+const KINDS = [
+  "stock.declared",
+  "transfer.requested",
+  "transfer.status",
+  "triage.token",
+  "triage.arrived",
+];
 
 /** Shape check for entries arriving from outside (hub, radio, USB file). */
 export function isLedgerEntry(value: unknown): value is LedgerEntry {

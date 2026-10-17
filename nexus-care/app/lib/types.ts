@@ -32,6 +32,24 @@ export type Transfer = {
   createdAt: number;
 };
 
+/** SMS triage: RED = go now, YELLOW = see a clinic today. Issued by the hub. */
+export type TriageLevel = "RED" | "YELLOW";
+
+export type TriageTokenData = {
+  code: string;
+  level: TriageLevel;
+  clinic: ClinicId | null; // null: patient's area not listed, any clinic may receive them
+  area: string | null;
+  summary: string;
+  expiresAt: number;
+};
+
+export type TriageToken = TriageTokenData & {
+  id: string;
+  issuedAt: number;
+  arrived: { clinicId: ClinicId; at: number } | null;
+};
+
 /**
  * Ledger entries are immutable and globally unique by `id`, so merging two
  * ledgers is a set union. Duplicates (same id) are ignored, which makes every
@@ -54,6 +72,11 @@ export type LedgerEntry =
   | (EntryBase & {
       kind: "transfer.status";
       data: { transferId: string; status: TransferStatus };
+    })
+  | (EntryBase & { kind: "triage.token"; data: TriageTokenData })
+  | (EntryBase & {
+      kind: "triage.arrived";
+      data: { tokenId: string; code: string };
     });
 
 /** What is stored locally: the entry plus whether the hub has acknowledged it. */
@@ -72,6 +95,7 @@ export type StoreState = {
   deviceId: string;
   clinics: Clinic[];
   transfers: Transfer[];
+  tokens: TriageToken[];
   pendingCount: number;
   sync: SyncState;
 };

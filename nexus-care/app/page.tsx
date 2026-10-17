@@ -5,13 +5,14 @@ import { AlertTriangle } from "lucide-react";
 import Header from "./components/Header";
 import Sidebar, { NAV_ITEMS, type ViewId } from "./components/Sidebar";
 import { LOCAL_CLINIC_ID, SCENARIO } from "./lib/directory";
-import { declareStock, requestTransfer } from "./lib/store";
+import { declareStock, markArrived, requestTransfer } from "./lib/store";
 import { useAutoSync, useStore } from "./lib/use-store";
 import InventoryView from "./views/InventoryView";
 import NetworkView from "./views/NetworkView";
 import OverviewView from "./views/OverviewView";
 import PatientsView from "./views/PatientsView";
 import SettingsView from "./views/SettingsView";
+import SmsSimulatorView from "./views/SmsSimulatorView";
 import SyncView from "./views/SyncView";
 import TriageView from "./views/TriageView";
 
@@ -63,6 +64,8 @@ export default function Home() {
                   local={local}
                   clinics={store.clinics}
                   transfers={store.transfers}
+                  tokens={store.tokens}
+                  onArrived={markArrived}
                   onRequest={(clinic) =>
                     requestTransfer(clinic.id, "Confirm beds, supplies and receiving staff")
                   }
@@ -83,6 +86,7 @@ export default function Home() {
                 />
               )}
               {view === "sync" && <SyncView store={store} />}
+              {view === "sms" && <SmsSimulatorView />}
               {view === "settings" && <SettingsView store={store} local={local} />}
             </>
           )}

@@ -10,6 +10,7 @@ import type {
   StoredEntry,
   SyncState,
   TransferStatus,
+  TriageToken,
 } from "./types";
 
 /**
@@ -177,6 +178,12 @@ export async function setTransferStatus(
 ) {
   await ensureInit();
   commit(author("transfer.status", { transferId, status }));
+}
+
+/** A patient with an SMS token has arrived at this clinic's desk. */
+export async function markArrived(token: TriageToken) {
+  await ensureInit();
+  commit(author("triage.arrived", { tokenId: token.id, code: token.code }));
 }
 
 // ------------------------------------------------------------ sync support

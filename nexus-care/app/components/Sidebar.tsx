@@ -1,6 +1,7 @@
 import {
   Activity,
   LayoutDashboard,
+  MessageSquare,
   Network,
   Package,
   Radio,
@@ -10,6 +11,7 @@ import {
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
+import { SYNC_URL } from "../lib/directory";
 
 export type ViewId =
   | "overview"
@@ -18,6 +20,7 @@ export type ViewId =
   | "network"
   | "inventory"
   | "sync"
+  | "sms"
   | "settings";
 
 export const NAV_ITEMS: { id: ViewId; label: string; icon: LucideIcon }[] = [
@@ -27,6 +30,7 @@ export const NAV_ITEMS: { id: ViewId; label: string; icon: LucideIcon }[] = [
   { id: "network", label: "Clinic Network", icon: Network },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "sync", label: "Sync Status", icon: Radio },
+  { id: "sms", label: "SMS Bot (demo)", icon: MessageSquare },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -50,7 +54,7 @@ export default function Sidebar({ active, onSelect, pendingCount }: Props) {
       </div>
 
       <nav className="flex gap-1 overflow-x-auto p-3 lg:flex-1 lg:flex-col lg:overflow-visible">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => item.id !== "sms" || SYNC_URL).map((item) => {
           const Icon = item.icon;
           const isActive = item.id === active;
           return (

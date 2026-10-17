@@ -67,3 +67,8 @@ const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 export function isStale(updatedAt: number | null) {
   return updatedAt === null || Date.now() - updatedAt > STALE_AFTER_MS;
 }
+
+/** SMS tokens stop fast-tracking after the hub's validity window. */
+export function isExpired(expiresAt: number) {
+  return Date.now() >= expiresAt;
+}

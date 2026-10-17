@@ -1,0 +1,72 @@
+{
+  "_comment": "DEMO RULES ONLY. Not a clinical protocol. Replace with a clinician-approved protocol (e.g. WHO ETAT danger signs) before any real use. Every text must stay in the GSM-7 alphabet (plain ASCII is safe).",
+  "name": "Demo valley SMS triage (fictional)",
+  "session_minutes": 30,
+  "token_hours": 24,
+  "max_invalid": 2,
+
+  "areas": [
+    { "key": "1", "name": "Outpost A area", "clinic": "A", "clinic_name": "Outpost A" },
+    { "key": "2", "name": "Outpost B area", "clinic": "B", "clinic_name": "Outpost B" },
+    { "key": "3", "name": "Outpost C area", "clinic": "C", "clinic_name": "Outpost C" },
+    { "key": "4", "name": "Outpost D area", "clinic": "D", "clinic_name": "Outpost D" },
+    { "key": "5", "name": "Outpost E area", "clinic": "E", "clinic_name": "Outpost E" },
+    { "key": "6", "name": "Outpost F area", "clinic": "F", "clinic_name": "Outpost F" },
+    { "key": "7", "name": "Outpost G area", "clinic": "G", "clinic_name": "Outpost G" }
+  ],
+  "unlisted_area_key": "0",
+
+  "danger_signs": [
+    { "key": "1", "label": "Hard to breathe" },
+    { "key": "2", "label": "Heavy bleeding" },
+    { "key": "3", "label": "Fits or unconscious" },
+    { "key": "4", "label": "Snake bite" },
+    { "key": "5", "label": "Chest pain" },
+    { "key": "6", "label": "Pregnancy bleeding/labour" }
+  ],
+  "no_danger_key": "0",
+
+  "complaints": [
+    {
+      "key": "1", "label": "Fever", "home_care_if": ["1"],
+      "advice": "Fever: rest, drink plenty of clean water, take paracetamol as the pack says, cool the skin with a damp cloth. See a clinic if not better in 2 days."
+    },
+    {
+      "key": "2", "label": "Diarrhoea or vomiting", "home_care_if": ["1"],
+      "advice": "Diarrhoea/vomiting: drink ORS (1L clean water, 6 level tsp sugar, half tsp salt) in small sips often. Keep eating. See a clinic if not better in 2 days."
+    },
+    {
+      "key": "3", "label": "Cough", "home_care_if": ["1", "2"],
+      "advice": "Cough: rest, drink warm fluids, keep away from smoke. See a clinic if it lasts more than 3 days or comes with fever."
+    },
+    { "key": "4", "label": "Injury", "home_care_if": [] },
+    { "key": "5", "label": "Other problem", "home_care_if": [] }
+  ],
+
+  "durations": [
+    { "key": "1", "label": "Started today" },
+    { "key": "2", "label": "1-3 days" },
+    { "key": "3", "label": "More than 3 days" }
+  ],
+
+  "levels": {
+    "RED": { "prefix": "RED", "label": "Urgent" },
+    "YELLOW": { "prefix": "YEL", "label": "See a clinic today" }
+  },
+
+  "text": {
+    "area_menu": "Nexus Care triage (DEMO). Reply with your area:",
+    "unlisted_area": "Not listed",
+    "danger_menu": "Any of these NOW? Reply a number:",
+    "none": "None",
+    "complaint_menu": "What is the main problem?",
+    "duration_menu": "How long has it lasted?",
+    "invalid": "Please reply with one number.",
+    "red": "CODE {code}. Go NOW to {clinic}. Show this code at the desk for fast care. Valid {hours}h.",
+    "yellow": "CODE {code}. Please go to {clinic} today. Show this code at the desk. Valid {hours}h.",
+    "nearest_clinic": "the nearest clinic",
+    "safety": "Go to a clinic NOW if you get: hard breathing, heavy bleeding, fits, chest pain.",
+    "repeat_code": "Your code is still {code} for {clinic}. Text RESET to start again.",
+    "stopped": "Stopped. Text HI any time to start again."
+  }
+}

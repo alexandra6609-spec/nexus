@@ -4,6 +4,8 @@ WAL + synchronous=NORMAL keeps disk writes few and cheap, which suits a
 solar-powered Raspberry Pi. Entries are immutable and unique by id, so
 inserting the same entry twice is a no-op.
 """
+from __future__ import annotations
+
 import json
 import sqlite3
 from contextlib import closing
@@ -20,6 +22,13 @@ CREATE TABLE IF NOT EXISTS ledger (
   data      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ledger_device ON ledger(device);
+
+-- One row per patient phone (hashed) while an SMS conversation is open.
+CREATE TABLE IF NOT EXISTS sms_sessions (
+  phone_hash TEXT PRIMARY KEY,
+  state      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 """
 
 
@@ -72,3 +81,61 @@ def entries_after(
     ]
     cursor = rows[-1]["seq"] if rows else after
     return entries, cursor, more
+
+
+# ------------------------------------------------------------- SMS triage
+
+def get_session(conn: sqlite3.Connection, phone_hash: str) -> dict | None:
+    row = conn.execute(
+        "SELECT state FROM sms_sessions WHERE phone_hash = ?", (phone_hash,)
+    ).fetchone()
+    return json.loads(row["state"]) if row else None
+
+
+def save_session(conn: sqlite3.Connection, phone_hash: str, state: dict | None, now_ms: int) -> None:
+    with conn:
+        if state is None:
+            conn.execute("DELETE FROM sms_sessions WHERE phone_hash = ?", (phone_hash,))
+        else:
+            conn.execute(
+                "INSERT INTO sms_sessions (phone_hash, state, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(phone_hash) DO UPDATE SET state = excluded.state, "
+                "updated_at = excluded.updated_at",
+                (phone_hash, json.dumps(state, separators=(",", ":")), now_ms),
+            )
+
+
+def next_lamport(conn: sqlite3.Connection) -> int:
+    """The hub authors entries too; stay ahead of everything it has seen."""
+    row = conn.execute("SELECT COALESCE(MAX(lc), 0) AS lc FROM ledger").fetchone()
+    return row["lc"] + 1
+
+
+def find_token(conn: sqlite3.Connection, code: str) -> dict | None:
+    """Latest token entry with this code, plus its arrival if one was recorded."""
+    row = conn.execute(
+        "SELECT * FROM ledger WHERE kind = 'triage.token' "
+        "AND json_extract(data, '$.code') = ? ORDER BY seq DESC LIMIT 1",
+        (code,),
+    ).fetchone()
+    if not row:
+        return None
+    arrived = conn.execute(
+        "SELECT clinic_id, ts FROM ledger WHERE kind = 'triage.arrived' "
+        "AND json_extract(data, '$.tokenId') = ? ORDER BY seq LIMIT 1",
+        (row["id"],),
+    ).fetchone()
+    return {
+        "id": row["id"], "clinicId": row["clinic_id"], "ts": row["ts"],
+        **json.loads(row["data"]),
+        "arrived": {"clinicId": arrived["clinic_id"], "ts": arrived["ts"]} if arrived else None,
+    }
+
+
+def code_in_use(conn: sqlite3.Connection, code: str, now_ms: int) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM ledger WHERE kind = 'triage.token' "
+        "AND json_extract(data, '$.code') = ? AND json_extract(data, '$.expiresAt') > ? LIMIT 1",
+        (code, now_ms),
+    ).fetchone()
+    return row is not None
