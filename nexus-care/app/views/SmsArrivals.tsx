@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CheckCircle2, Search, Ticket } from "lucide-react";
+import { Ambulance, CheckCircle2, Search, Ticket } from "lucide-react";
+import { AmbulanceBadge, SmsInputs } from "../components/SmsInputs";
 import { buttonClass, inputClass } from "../components/ui";
 import { formatTime, isExpired } from "../lib/clinic-logic";
 import type { Clinic, TriageToken } from "../lib/types";
@@ -48,6 +49,17 @@ function TokenRow({ token, localId, nameOf, onArrived }: RowProps) {
           {token.area ?? "Area not given"} · sent {formatTime(token.issuedAt)}
           {elsewhere && ` · told to go to ${nameOf(token.clinic)}`}
         </p>
+        <div className="mt-1">
+          <AmbulanceBadge ambulance={token.ambulance} />
+        </div>
+        <details className="mt-1">
+          <summary className="cursor-pointer text-xs font-semibold text-teal-700">
+            SMS answers
+          </summary>
+          <div className="mt-1 rounded bg-slate-50 p-2">
+            <SmsInputs token={token} />
+          </div>
+        </details>
       </div>
       {token.arrived ? (
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
@@ -80,6 +92,7 @@ export default function SmsArrivals({ local, clinics, tokens, onArrived }: Props
     (t) => (t.clinic === local.id || t.clinic === null) && !t.arrived && !isExpired(t.expiresAt)
   );
   const found = looked === null ? null : tokens.find((t) => t.code === looked) ?? null;
+  const ambulances = expecting.filter((t) => t.ambulance === true).length;
 
   const rowProps = { localId: local.id, nameOf, onArrived };
 
@@ -100,6 +113,18 @@ export default function SmsArrivals({ local, clinics, tokens, onArrived }: Props
           </p>
         </div>
       </div>
+
+      {ambulances > 0 && (
+        <p
+          role="alert"
+          className="mb-3 flex items-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-bold text-white"
+        >
+          <Ambulance size={16} />
+          {ambulances === 1
+            ? "1 patient asked for an ambulance"
+            : `${ambulances} patients asked for an ambulance`}
+        </p>
+      )}
 
       <form onSubmit={lookup} className="mb-3 flex gap-2">
         <input

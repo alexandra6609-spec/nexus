@@ -35,12 +35,17 @@ export type Transfer = {
 /** SMS triage: RED = go now, YELLOW = see a clinic today. Issued by the hub. */
 export type TriageLevel = "RED" | "YELLOW";
 
+/** One SMS question and the patient's answer, in words. Built by the hub. */
+export type TriageInput = { question: string; answer: string };
+
 export type TriageTokenData = {
   code: string;
   level: TriageLevel;
   clinic: ClinicId | null; // null: patient's area not listed, any clinic may receive them
   area: string | null;
   summary: string;
+  ambulance: boolean | null; // null: not asked, or the patient did not answer
+  inputs: TriageInput[]; // every answer the patient gave by SMS
   expiresAt: number;
 };
 

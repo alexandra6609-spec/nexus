@@ -57,7 +57,9 @@ export default function Home() {
           ) : (
             <>
               {view === "overview" && <OverviewView clinics={store.clinics} />}
-              {view === "patients" && <PatientsView />}
+              {view === "patients" && (
+                <PatientsView local={local} clinics={store.clinics} tokens={store.tokens} />
+              )}
               {view === "triage" && (
                 <TriageView
                   local={local}

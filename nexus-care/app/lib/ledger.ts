@@ -5,6 +5,7 @@ import type {
   LedgerEntry,
   StockReport,
   Transfer,
+  TriageInput,
   TriageToken,
   TriageTokenData,
 } from "./types";
@@ -49,6 +50,19 @@ export function normalizeReport(data: unknown): StockReport {
   };
 }
 
+/** SMS answers as question/answer text. Skips anything that is not a pair of strings. */
+function readInputs(value: unknown): TriageInput[] {
+  if (!Array.isArray(value)) return [];
+  const rows: TriageInput[] = [];
+  for (const item of value.slice(0, 20)) {
+    const row = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
+    if (typeof row.question === "string" && typeof row.answer === "string") {
+      rows.push({ question: row.question.slice(0, 80), answer: row.answer.slice(0, 200) });
+    }
+  }
+  return rows;
+}
+
 /** Token data comes from the hub over the air: check it like any outside input. */
 function readToken(data: unknown): TriageTokenData | null {
   const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
@@ -59,6 +73,8 @@ function readToken(data: unknown): TriageTokenData | null {
     clinic: typeof d.clinic === "string" ? d.clinic : null,
     area: typeof d.area === "string" ? d.area : null,
     summary: typeof d.summary === "string" ? d.summary : "",
+    ambulance: typeof d.ambulance === "boolean" ? d.ambulance : null,
+    inputs: readInputs(d.inputs),
     expiresAt: typeof d.expiresAt === "number" ? d.expiresAt : 0,
   };
 }
@@ -125,7 +141,9 @@ export function deriveState(
     ),
     tokens: [...tokens.values()].sort(
       (a, b) =>
-        Number(b.level === "RED") - Number(a.level === "RED") || b.issuedAt - a.issuedAt
+        Number(b.level === "RED") - Number(a.level === "RED") ||
+        Number(b.ambulance === true) - Number(a.ambulance === true) ||
+        b.issuedAt - a.issuedAt
     ),
   };
 }

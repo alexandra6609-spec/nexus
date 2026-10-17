@@ -8,6 +8,8 @@ Safety rules built into the machine, whatever the data says:
   - a complaint is home care only when the rules explicitly say so
   - too many unclear replies escalate to YELLOW instead of giving up
   - every home-care reply ends with the danger-sign safety line
+  - a token is never held back by the ambulance question: unclear replies
+    still issue the token, with the ambulance answer left blank
 """
 from __future__ import annotations
 
@@ -117,11 +119,16 @@ def _duration_menu(rules: dict) -> str:
     return _menu(rules["text"]["duration_menu"], [(d["key"], d["label"]) for d in rules["durations"]])
 
 
+def _ambulance_menu(rules: dict) -> str:
+    return _menu(rules["text"]["ambulance_menu"], [(o["key"], o["label"]) for o in rules["ambulance_options"]])
+
+
 MENUS = {
     "area": _area_menu,
     "danger": _danger_menu,
     "complaint": _complaint_menu,
     "duration": _duration_menu,
+    "ambulance": _ambulance_menu,
 }
 
 
@@ -190,7 +197,7 @@ def step(
         sign = _find(rules["danger_signs"], first)
         if sign:
             session["answers"]["danger"] = first
-            return _issue(rules, session, "RED", f"Danger sign: {sign['label']}", issue)
+            return _ask_ambulance(rules, session, "RED", f"Danger sign: {sign['label']}")
         if first == rules["no_danger_key"]:
             session["answers"]["danger"] = first
             session.update(step="complaint", invalid=0)
@@ -211,11 +218,22 @@ def step(
             if first in complaint.get("home_care_if", []) and complaint.get("advice"):
                 replies = split_sms(f"{complaint['advice']}\n{t['safety']}")
                 return None, replies, None
-            return _issue(rules, session, "YELLOW", summary, issue)
+            return _ask_ambulance(rules, session, "YELLOW", summary)
+
+    elif current == "ambulance":
+        choice = _find(rules["ambulance_options"], first)
+        if choice:
+            session["answers"]["ambulance"] = first
+            pending = session["pending"]
+            return _issue(rules, session, pending["level"], pending["summary"], issue)
 
     # Not a valid answer for this step.
     session["invalid"] = session.get("invalid", 0) + 1
     if session["invalid"] > rules["max_invalid"]:
+        if current == "ambulance":
+            # Already decided the level. Issue it now, ambulance answer left blank.
+            pending = session["pending"]
+            return _issue(rules, session, pending["level"], pending["summary"], issue)
         if current == "area":
             # Can't tell where they are: carry on without an area rather than stall.
             session.update(step="danger", invalid=0, clinic=None, clinic_name=None, area=None)
@@ -224,12 +242,48 @@ def step(
     return session, split_sms(f"{t['invalid']}\n{MENUS[current](rules)}"), None
 
 
+def _ask_ambulance(rules: dict, session: Session, level: str, summary: str):
+    """The level is decided; one more question before the token is issued."""
+    session.update(step="ambulance", invalid=0, pending={"level": level, "summary": summary})
+    return session, split_sms(_ambulance_menu(rules)), None
+
+
+def _label(options: list[dict], key: str | None) -> str | None:
+    option = _find(options, key) if key else None
+    return option["label"] if option else None
+
+
+def _inputs(rules: dict, session: Session) -> list[dict]:
+    """Every answer as readable question/answer text, for the clinic dashboard.
+
+    Built here from the rules, so the dashboard shows exactly what the patient
+    was asked, even after the protocol is edited.
+    """
+    t = rules["text"]
+    q = t["input_labels"]
+    a = session["answers"]
+    answered = lambda key, options, empty: _label(options, a.get(key)) or empty
+    return [
+        {"question": q["area"], "answer": session.get("area") or t["not_given"]},
+        {"question": q["danger"], "answer": (
+            _label(rules["danger_signs"], a.get("danger"))
+            or (t["none"] if a.get("danger") == rules["no_danger_key"] else t["not_given"])
+        )},
+        {"question": q["complaint"], "answer": answered("complaint", rules["complaints"], t["not_given"])},
+        {"question": q["duration"], "answer": answered("duration", rules["durations"], t["not_given"])},
+        {"question": q["ambulance"], "answer": answered("ambulance", rules["ambulance_options"], t["no_answer"])},
+    ]
+
+
 def _issue(rules: dict, session: Session, level: str, summary: str, issue: Callable[[str], str]):
     t = rules["text"]
     hours = rules["token_hours"]
     code = issue(rules["levels"][level]["prefix"])
     expires_at = session["updated"] + hours * 3_600_000
-    template = t["red"] if level == "RED" else t["yellow"]
+    choice = _find(rules["ambulance_options"], session["answers"].get("ambulance", ""))
+    ambulance = choice["needed"] if choice else None  # None: not asked or not answered
+    key = "red" if level == "RED" else "yellow"
+    template = t[f"{key}_ambulance"] if ambulance else t[key]
     reply = template.format(code=code, clinic=_clinic_text(rules, session), hours=hours)
     if level == "YELLOW":
         reply += "\n" + t["safety"]
@@ -241,6 +295,8 @@ def _issue(rules: dict, session: Session, level: str, summary: str, issue: Calla
         "area": session.get("area"),
         "summary": summary,
         "answers": session["answers"],
+        "ambulance": ambulance,
+        "inputs": _inputs(rules, session),
         "expiresAt": expires_at,
     }
     done = {

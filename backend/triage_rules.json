@@ -49,6 +49,11 @@
     { "key": "3", "label": "More than 3 days" }
   ],
 
+  "ambulance_options": [
+    { "key": "1", "label": "Yes, I need an ambulance", "needed": true },
+    { "key": "2", "label": "No, I can get there", "needed": false }
+  ],
+
   "levels": {
     "RED": { "prefix": "RED", "label": "Urgent" },
     "YELLOW": { "prefix": "YEL", "label": "See a clinic today" }
@@ -67,6 +72,15 @@
     "nearest_clinic": "the nearest clinic",
     "safety": "Go NOW if: hard breathing, heavy bleeding, fits or chest pain.",
     "repeat_code": "Your code is still {code} for {clinic}. Text RESET to start again.",
-    "stopped": "Stopped. Text HI any time to start again."
+    "stopped": "Stopped. Text HI any time to start again.",
+    "ambulance_menu": "Do you need an ambulance?",
+    "red_ambulance": "CODE {code}. Ambulance noted, clinic alerted. If anyone can drive you, go NOW to {clinic}. Valid {hours}h.",
+    "yellow_ambulance": "CODE {code}. Ambulance noted, clinic alerted. Go to {clinic} today if you can and show this code. Valid {hours}h.",
+    "not_given": "Not given",
+    "no_answer": "No answer",
+    "input_labels": {
+      "area": "Area", "danger": "Danger sign now", "complaint": "Main problem",
+      "duration": "How long", "ambulance": "Ambulance needed"
+    }
   }
 }
