@@ -15,7 +15,9 @@ from pydantic import BaseModel, Field, field_validator
 import storage
 
 DB_PATH = os.environ.get("NEXUS_DB", "nexus_hub.db")
-ORIGINS = os.environ.get("NEXUS_CORS", "http://localhost:3000").split(",")
+ORIGINS = os.environ.get(
+    "NEXUS_CORS", "http://localhost:3000,http://localhost:3001"
+).split(",")
 
 storage.init(DB_PATH)
 
