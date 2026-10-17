@@ -410,8 +410,8 @@ export default function Home() {
                 icon: Radio,
               },
               {
-                label: "Stroke Scanner",
-                href: "#stroke-scanner",
+                label: "Disease Scanner",
+                href: "#disease-scanner",
                 icon: SearchAlert,
               },
               {

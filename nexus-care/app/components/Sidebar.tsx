@@ -19,7 +19,7 @@ export type ViewId =
   | "network"
   | "inventory"
   | "sync"
-  | "stroke-scanner"
+  | "disease-scanner"
   | "settings";
 
 export const NAV_ITEMS: { id: ViewId; label: string; icon: LucideIcon }[] = [
@@ -29,7 +29,7 @@ export const NAV_ITEMS: { id: ViewId; label: string; icon: LucideIcon }[] = [
   { id: "network", label: "Clinic Network", icon: Network },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "sync", label: "Sync Status", icon: Radio },
-  { id: "stroke-scanner", label: "Stroke Scanner", icon: SearchAlert },
+  { id: "disease-scanner", label: "Disease Scanner", icon: SearchAlert },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

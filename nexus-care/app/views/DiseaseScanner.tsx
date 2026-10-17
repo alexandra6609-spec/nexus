@@ -2,13 +2,22 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { loadLiteRt, loadAndCompile, Tensor } from "@litertjs/core";
+import type { CompiledModel } from "@litertjs/core";
 
-export default function StrokeScanner() {
-  const canvasRef = useRef(null);
-  const [model, setModel] = useState(null);
-  const [status, setStatus] = useState("Compiling AI runtime...");
-  const [result, setResult] = useState("Pending...");
-  const [imagePreview, setImagePreview] = useState(null);
+declare global {
+  interface Window {
+    __litert_initialized?: boolean;
+  }
+}
+
+export type ScannableDisease = "Stroke" | "Burns";
+
+export default function DiseaseScanner() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [model, setModel] = useState<CompiledModel | null>(null);
+  const [status, setStatus] = useState<string>("Compiling AI runtime...");
+  const [result, setResult] = useState<string>("Pending...");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // 1. Initialize the LiteRT WebAssembly runtime and load the model on mount
   useEffect(() => {
@@ -25,16 +34,35 @@ export default function StrokeScanner() {
         }
 
         // Load the converted .tflite file from your public folder
-        const compiledModel = await loadAndCompile("/stroke_model.tflite", {
-          accelerators: ["webgpu", "wasm"],
-        });
+        let compiledModel: CompiledModel;
+        try {
+          setStatus("Attempting WebGPU compilation...");
+          // Try high-performance GPU mode first
+          compiledModel = await loadAndCompile("/stroke_model.tflite", {
+            accelerator: "webgpu",
+          });
+          setStatus("Ready! Using WebGPU acceleration.");
+        } catch (webGpuError: unknown) {
+          console.warn(
+            "WebGPU initialization failed, falling back to WASM:",
+            webGpuError,
+          );
+          setStatus("Compiling fallback CPU environment...");
+
+          // Fall back to universal WebAssembly CPU mode
+          compiledModel = await loadAndCompile("/stroke_model.tflite", {
+            accelerator: "wasm",
+          });
+          setStatus("Ready! Using WebAssembly CPU fallback.");
+        }
 
         setModel(compiledModel);
+
         setStatus("Ready! Upload an image to analyze.");
-      } catch (error) {
+      } catch (error: any) {
         console.error("LiteRT Load error:", error);
         // Fallback: If it's just a StrictMode initialization warning, let the user proceed
-        if (error.message && error.message.includes("already loading")) {
+        if (error?.message && error.message.includes("already loading")) {
           setStatus("Ready! Upload an image to analyze.");
         } else {
           setStatus("Error loading AI engine.");
@@ -45,8 +73,8 @@ export default function StrokeScanner() {
   }, []);
 
   // 2. Handle image upload, render it to canvas, and run model inference
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file || !model || !canvasRef.current) return;
 
     setStatus("Processing image...");
@@ -58,7 +86,10 @@ export default function StrokeScanner() {
     const img = new Image();
     img.src = objectUrl;
     img.onload = async () => {
+      if (!canvasRef.current || !model) return;
+
       const ctx = canvasRef.current.getContext("2d");
+      if (!ctx) return;
 
       // Draw the uploaded image perfectly resized onto our hidden 224x224 input canvas
       ctx.drawImage(img, 0, 0, 224, 224);
