@@ -181,11 +181,8 @@ export async function setTransferStatus(
 
 // ------------------------------------------------------------ sync support
 
-const strip = (stored: StoredEntry): LedgerEntry => {
-  const { synced, ...entry } = stored;
-  void synced;
-  return entry;
-};
+const strip = ({ synced: _synced, ...entry }: StoredEntry): LedgerEntry =>
+  entry as LedgerEntry;
 
 /** Own entries the hub has not acknowledged yet. */
 export function getPending(): LedgerEntry[] {

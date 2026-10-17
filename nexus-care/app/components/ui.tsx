@@ -7,16 +7,20 @@ export const buttonClass =
 export const secondaryButtonClass =
   "inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
+import type { Tone } from "../lib/scenario";
+
+export const toneClasses: Record<Tone, string> = {
+  ok: "bg-emerald-50 text-emerald-700",
+  info: "bg-sky-50 text-sky-800",
+  warn: "bg-amber-50 text-amber-800",
+  danger: "bg-red-50 text-red-700",
+  critical: "bg-red-600 text-white",
+};
+
 const pillStyles: Record<string, string> = {
-  Available: "bg-emerald-50 text-emerald-700",
-  Busy: "bg-amber-50 text-amber-800",
-  "At Capacity": "bg-red-50 text-red-700",
   "Pending confirmation": "bg-amber-50 text-amber-800",
   Confirmed: "bg-emerald-50 text-emerald-700",
   Declined: "bg-red-50 text-red-700",
-  Stocked: "bg-emerald-50 text-emerald-700",
-  Low: "bg-amber-50 text-amber-800",
-  Out: "bg-red-50 text-red-700",
 };
 
 export function StatusPill({ status }: { status: string }) {
@@ -27,6 +31,17 @@ export function StatusPill({ status }: { status: string }) {
       }`}
     >
       {status}
+    </span>
+  );
+}
+
+/** A pill coloured by a scenario level's tone (Normal / Low / Critical ...). */
+export function LevelPill({ label, tone }: { label: string; tone: Tone }) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${toneClasses[tone]}`}
+    >
+      {label}
     </span>
   );
 }

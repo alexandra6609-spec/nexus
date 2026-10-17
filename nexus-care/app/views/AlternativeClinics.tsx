@@ -1,14 +1,17 @@
+import { AlertTriangle, ArrowRight, ShieldAlert } from "lucide-react";
+import { ResourceLine } from "../components/ResourceStatus";
+import { buttonClass } from "../components/ui";
 import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  Droplets,
-  Package,
-  ShieldAlert,
-} from "lucide-react";
-import { StatusPill, buttonClass } from "../components/ui";
-import { formatTime, freeBeds, isStale, supplyStatus } from "../lib/clinic-logic";
-import { LOW_STOCK } from "../lib/directory";
+  bedCapacity,
+  formatMinutes,
+  formatTime,
+  freeBeds,
+  isStale,
+  kindLabel,
+  occupied,
+  statusOf,
+} from "../lib/clinic-logic";
+import { WORLD } from "../lib/directory";
 import type { Clinic } from "../lib/types";
 
 type Props = {
@@ -17,19 +20,29 @@ type Props = {
   onRequest: (clinic: Clinic) => void;
 };
 
-/** Other clinics with free beds, best first, based on the last reports received. */
-export function rankAlternatives(local: Clinic, clinics: Clinic[]) {
+export type Alternative = { clinic: Clinic; minutes: number };
+
+/**
+ * Places this one can send overflow to, best first: inside its network (plus
+ * its nearest hospital), with a free bed, based on the last reports received.
+ */
+export function rankAlternatives(local: Clinic, clinics: Clinic[]): Alternative[] {
+  const reach = new Map(WORLD.reachableFrom(local.id).map((r) => [r.id, r.minutes]));
   return clinics
-    .filter((clinic) => clinic.id !== local.id && freeBeds(clinic) > 0)
+    .filter((clinic) => reach.has(clinic.id) && freeBeds(clinic) > 0)
+    .map((clinic) => ({ clinic, minutes: reach.get(clinic.id) as number }))
     .sort((a, b) => {
-      if (freeBeds(b) !== freeBeds(a)) return freeBeds(b) - freeBeds(a);
-      return Number(b.online) - Number(a.online);
+      const beds = freeBeds(b.clinic) - freeBeds(a.clinic);
+      if (beds !== 0) return beds;
+      if (a.minutes !== b.minutes) return a.minutes - b.minutes;
+      return Number(b.clinic.online) - Number(a.clinic.online);
     });
 }
 
 export default function AlternativeClinics({ local, clinics, onRequest }: Props) {
   const alternatives = rankAlternatives(local, clinics);
-  const full = local.capacity > 0 && local.patients >= local.capacity;
+  const full = bedCapacity(local) > 0 && occupied(local) >= bedCapacity(local);
+  const hospital = WORLD.nearestHospital(local.id);
 
   return (
     <section id="alternatives" className="mb-5">
@@ -42,7 +55,9 @@ export default function AlternativeClinics({ local, clinics, onRequest }: Props)
             Alternative Clinic Suggestions
           </h2>
           <p className="text-xs text-slate-500">
-            For {local.name} when its reported patient load reaches capacity.
+            For {local.name}: places inside its network
+            {hospital ? " and its nearest hospital" : ""}, nearest-first among
+            equals.
           </p>
         </div>
       </div>
@@ -53,9 +68,9 @@ export default function AlternativeClinics({ local, clinics, onRequest }: Props)
           <div>
             <p className="font-semibold">{local.name} is at or over capacity.</p>
             <p className="mt-1 text-xs">
-              Reported load: {local.patients} patients for {local.capacity} beds.
+              Reported load: {occupied(local)} for {bedCapacity(local)} beds.
               Confirm current availability, clinical suitability, staffing,
-              supplies, and transport directly with the receiving clinic before
+              supplies, and transport directly with the receiving place before
               arranging a transfer.
             </p>
           </div>
@@ -69,13 +84,14 @@ export default function AlternativeClinics({ local, clinics, onRequest }: Props)
 
       {alternatives.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-          No other clinics currently report free beds. Contact the network
+          No place in reach currently reports free beds. Contact the network
           coordinator to confirm options.
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {alternatives.map((clinic, index) => {
+          {alternatives.map(({ clinic, minutes }, index) => {
             const stale = isStale(clinic.updatedAt);
+            const status = statusOf(clinic);
             return (
               <div
                 key={clinic.id}
@@ -88,7 +104,10 @@ export default function AlternativeClinics({ local, clinics, onRequest }: Props)
                     </div>
                     <div>
                       <h3 className="font-bold text-[#101B35]">{clinic.name}</h3>
-                      <p className="text-xs text-slate-500">{clinic.region}</p>
+                      <p className="text-xs text-slate-500">
+                        {kindLabel(clinic)} {clinic.id} · {clinic.region} ·{" "}
+                        {formatMinutes(minutes)} away
+                      </p>
                     </div>
                   </div>
                   <span className="rounded-md bg-emerald-50 px-2 py-1 text-sm font-bold text-emerald-800">
@@ -98,10 +117,7 @@ export default function AlternativeClinics({ local, clinics, onRequest }: Props)
 
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
                   <span className="rounded bg-slate-100 px-2 py-1">
-                    Patients: {clinic.patients}/{clinic.capacity}
-                  </span>
-                  <span className="rounded bg-slate-100 px-2 py-1">
-                    Staff: {clinic.staff}
+                    Beds: {occupied(clinic)}/{bedCapacity(clinic)}
                   </span>
                   <span
                     className={`rounded px-2 py-1 ${
@@ -123,19 +139,11 @@ export default function AlternativeClinics({ local, clinics, onRequest }: Props)
                 </div>
 
                 <div className="mt-3 space-y-1 text-sm">
-                  {(
-                    [
-                      ["Oxygen", Activity, clinic.oxygen, LOW_STOCK.oxygen],
-                      ["IV fluids", Droplets, clinic.fluids, LOW_STOCK.fluids],
-                      ["Antivenom", Package, clinic.antivenom, LOW_STOCK.antivenom],
-                    ] as const
-                  ).map(([label, Icon, quantity, low]) => (
-                    <p key={label} className="flex items-center gap-2">
-                      <Icon size={15} className="text-slate-500" />
-                      {label}: <StatusPill status={supplyStatus(quantity, low)} />
-                      <span className="text-slate-500">({quantity} reported)</span>
-                    </p>
-                  ))}
+                  {status.resources
+                    .filter((r) => r.alertable)
+                    .map((r) => (
+                      <ResourceLine key={r.resource.id} status={r} />
+                    ))}
                 </div>
 
                 <button

@@ -1,20 +1,16 @@
+import type { Place } from "./scenario";
+
 export type ClinicId = string;
 
-/** Static facts about a clinic. Shipped with the app, never edited at runtime. */
-export type ClinicProfile = {
-  id: ClinicId;
-  name: string;
-  region: string;
-};
+/** Static facts about a place (clinic or hospital). Comes from the scenario. */
+export type ClinicProfile = Place;
 
-/** What a clinic declares about itself. This is the only thing clinics edit. */
+/**
+ * What a place declares about itself: a quantity for every typed-in resource
+ * in the scenario (beds, staff, supplies...), plus a few fixed fields.
+ */
 export type StockReport = {
-  patients: number;
-  capacity: number;
-  staff: number;
-  oxygen: number;
-  fluids: number;
-  antivenom: number;
+  quantities: Record<string, number>;
   online: boolean;
   notes: string;
 };

@@ -1,32 +1,56 @@
+import { SCENARIO, WORLD } from "./directory";
+import { evaluatePlace, type PlaceStatus } from "./levels";
 import type { Clinic } from "./types";
 
+// Beds. Which resources mean "occupied" and "capacity" is set in the scenario.
+
+export function occupied(clinic: Clinic) {
+  return SCENARIO.roles ? clinic.quantities[SCENARIO.roles.occupied] ?? 0 : 0;
+}
+
+export function bedCapacity(clinic: Clinic) {
+  return SCENARIO.roles ? clinic.quantities[SCENARIO.roles.capacity] ?? 0 : 0;
+}
+
 export function occupancy(clinic: Clinic) {
-  if (clinic.capacity <= 0) return 0;
-  return Math.round((clinic.patients / clinic.capacity) * 100);
+  const capacity = bedCapacity(clinic);
+  if (capacity <= 0) return 0;
+  return Math.round((occupied(clinic) / capacity) * 100);
 }
 
 export function freeBeds(clinic: Clinic) {
-  return Math.max(0, clinic.capacity - clinic.patients);
+  return Math.max(0, bedCapacity(clinic) - occupied(clinic));
 }
 
-export function clinicStatus(clinic: Clinic) {
-  if (clinic.capacity > 0 && clinic.patients >= clinic.capacity) {
-    return "At Capacity";
-  }
-  if (occupancy(clinic) >= 75) return "Busy";
-  return "Available";
+/** Priority of a place, judged by the scenario's bands for each resource. */
+export function statusOf(clinic: Clinic): PlaceStatus {
+  return evaluatePlace(SCENARIO, clinic, clinic.quantities, clinic.updatedAt !== null);
 }
 
-export function supplyStatus(quantity: number, lowThreshold: number) {
-  if (quantity <= 0) return "Out";
-  if (quantity <= lowThreshold) return "Low";
-  return "Stocked";
+export function needsAttention(clinic: Clinic) {
+  return statusOf(clinic).level >= SCENARIO.attentionLevel;
 }
 
-export function supplyColor(status: string) {
-  if (status === "Out") return "text-red-700 bg-red-50";
-  if (status === "Low") return "text-amber-800 bg-amber-50";
-  return "text-emerald-700 bg-emerald-50";
+export function kindLabel(clinic: { kind: string }) {
+  return clinic.kind === "hospital" ? "Hospital" : "Clinic";
+}
+
+export function formatValue(value: number | null, percent: boolean) {
+  if (value === null) return "n/a";
+  return percent ? `${value}%` : String(value);
+}
+
+export function formatMinutes(minutes: number) {
+  if (!Number.isFinite(minutes)) return "no route";
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/** Travel time from this device's place to another, as text. */
+export function travelFrom(fromId: string, toId: string) {
+  return formatMinutes(WORLD.minutes(fromId, toId));
 }
 
 export function formatTime(timestamp: number | null) {

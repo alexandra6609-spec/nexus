@@ -1,4 +1,5 @@
 import { CloudOff, HardDriveDownload } from "lucide-react";
+import { kindLabel } from "../lib/clinic-logic";
 import type { Clinic } from "../lib/types";
 
 type Props = {
@@ -20,7 +21,7 @@ export default function Header({ viewLabel, local, pendingCount }: Props) {
           {local.name}
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Clinic {local.id} · {local.region}
+          {kindLabel(local)} {local.id} · {local.region}
         </p>
       </div>
 

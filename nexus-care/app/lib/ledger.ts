@@ -1,4 +1,4 @@
-import { CLINIC_DIRECTORY, EMPTY_REPORT } from "./directory";
+import { EMPTY_REPORT, INPUT_RESOURCES, PLACES } from "./directory";
 import type {
   Clinic,
   ClinicProfile,
@@ -20,10 +20,37 @@ export function compareEntries(a: LedgerEntry, b: LedgerEntry) {
 
 type StockEntry = Extract<LedgerEntry, { kind: "stock.declared" }>;
 
+/**
+ * Entries come from other tablets, files and older versions of this app, so
+ * never trust their shape. Keeps only resources this scenario knows about and
+ * fills gaps with zero. Also reads the old flat format (oxygen: 3, ...).
+ */
+export function normalizeReport(data: unknown): StockReport {
+  const raw = (typeof data === "object" && data !== null ? data : {}) as Record<
+    string,
+    unknown
+  >;
+  const source =
+    typeof raw.quantities === "object" && raw.quantities !== null
+      ? (raw.quantities as Record<string, unknown>)
+      : raw;
+  const quantities: Record<string, number> = {};
+  for (const resource of INPUT_RESOURCES) {
+    const value = source[resource.id];
+    quantities[resource.id] =
+      typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+  }
+  return {
+    quantities,
+    online: raw.online === true,
+    notes: typeof raw.notes === "string" ? raw.notes : "",
+  };
+}
+
 /** Fold the ledger into what the screens show. Pure, so it is easy to test. */
 export function deriveState(
   entries: Iterable<LedgerEntry>,
-  directory: ClinicProfile[] = CLINIC_DIRECTORY
+  directory: ClinicProfile[] = PLACES
 ): { clinics: Clinic[]; transfers: Transfer[] } {
   const latestStock = new Map<string, StockEntry>();
   const transfers = new Map<string, Transfer>();
@@ -57,7 +84,7 @@ export function deriveState(
 
   const clinics: Clinic[] = directory.map((profile) => {
     const entry = latestStock.get(profile.id);
-    const report: StockReport = entry ? entry.data : EMPTY_REPORT;
+    const report: StockReport = entry ? normalizeReport(entry.data) : EMPTY_REPORT;
     return { ...profile, ...report, updatedAt: entry ? entry.ts : null };
   });
 

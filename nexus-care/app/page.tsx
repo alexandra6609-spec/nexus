@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import Header from "./components/Header";
 import Sidebar, { NAV_ITEMS, type ViewId } from "./components/Sidebar";
-import { LOCAL_CLINIC_ID } from "./lib/directory";
+import { LOCAL_CLINIC_ID, SCENARIO } from "./lib/directory";
 import { declareStock, requestTransfer } from "./lib/store";
 import { useAutoSync, useStore } from "./lib/use-store";
 import InventoryView from "./views/InventoryView";
@@ -89,7 +89,7 @@ export default function Home() {
 
           <footer className="py-4 text-center text-xs text-slate-400">
             Nexus Care · Pillar 2: Low-Bandwidth Inter-Clinic Mesh &amp; Triage
-            Engine · Fictional demonstration data
+            Engine · {SCENARIO.name}
           </footer>
         </main>
       </div>

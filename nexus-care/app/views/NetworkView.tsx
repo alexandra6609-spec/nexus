@@ -1,15 +1,21 @@
-import { BedDouble, Building2, Users, Wifi, WifiOff } from "lucide-react";
-import { StatusPill } from "../components/ui";
+"use client";
+
+import { useState } from "react";
+import { BedDouble, Building2, Landmark, Wifi, WifiOff } from "lucide-react";
+import { ResourceChip } from "../components/ResourceStatus";
+import { LevelPill, secondaryButtonClass } from "../components/ui";
 import {
-  clinicStatus,
+  bedCapacity,
   formatTime,
   freeBeds,
   isStale,
+  kindLabel,
   occupancy,
-  supplyColor,
-  supplyStatus,
+  occupied,
+  statusOf,
+  travelFrom,
 } from "../lib/clinic-logic";
-import { LOW_STOCK } from "../lib/directory";
+import { SCENARIO, WORLD } from "../lib/directory";
 import type { Clinic } from "../lib/types";
 
 type Props = {
@@ -18,24 +24,68 @@ type Props = {
   onEditLocal: () => void;
 };
 
-/** Clinic Network: the latest known state of all five clinics. */
+/** Clinic Network: what this device last heard about the places around it. */
 export default function NetworkView({ clinics, localClinicId, onEditLocal }: Props) {
+  const [scope, setScope] = useState<"network" | "all">("network");
+
+  const byId = new Map(clinics.map((clinic) => [clinic.id, clinic]));
+  const local = byId.get(localClinicId);
+  const nearest = WORLD.nearestHospital(localClinicId);
+
+  const visible: Clinic[] =
+    scope === "all" || !local
+      ? clinics
+      : [
+          local,
+          ...WORLD.reachableFrom(localClinicId)
+            .map((reach) => byId.get(reach.id))
+            .filter((clinic): clinic is Clinic => Boolean(clinic)),
+        ];
+
   return (
     <section id="clinic-network">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-bold text-[#101B35]">Five-Clinic Network</h2>
-        <span className="text-xs text-slate-500">
-          Other clinics show the last report this device received
-        </span>
+        <div>
+          <h2 className="text-lg font-bold text-[#101B35]">
+            {scope === "network" ? "My Network" : "All Places"}
+          </h2>
+          <p className="text-xs text-slate-500">
+            {scope === "network"
+              ? `Places closer than ${
+                  nearest ? `the nearest hospital (${nearest.id})` : "any hospital"
+                }, plus that hospital. Other places show the last report this device received.`
+              : "Every place in the scenario. Other places show the last report this device received."}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className={secondaryButtonClass}
+            aria-pressed={scope === "network"}
+            onClick={() => setScope("network")}
+          >
+            My network
+          </button>
+          <button
+            type="button"
+            className={secondaryButtonClass}
+            aria-pressed={scope === "all"}
+            onClick={() => setScope("all")}
+          >
+            All places
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-        {clinics.map((clinic) => {
+        {visible.map((clinic) => {
           const isLocal = clinic.id === localClinicId;
+          const hasBeds = bedCapacity(clinic) > 0;
           const percent = occupancy(clinic);
-          const status = clinicStatus(clinic);
-          const isOver = clinic.capacity > 0 && clinic.patients > clinic.capacity;
+          const isOver = hasBeds && occupied(clinic) > bedCapacity(clinic);
           const stale = !isLocal && isStale(clinic.updatedAt);
+          const status = statusOf(clinic);
+          const Icon = clinic.kind === "hospital" ? Landmark : Building2;
 
           return (
             <div
@@ -47,88 +97,81 @@ export default function NetworkView({ clinics, localClinicId, onEditLocal }: Pro
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-3">
                   <div className="rounded-md bg-slate-100 p-2 text-slate-700">
-                    <Building2 size={20} />
+                    <Icon size={20} />
                   </div>
                   <div>
                     <h3 className="font-bold text-[#101B35]">{clinic.name}</h3>
                     <p className="text-xs text-slate-500">
-                      Clinic {clinic.id} · {clinic.region}
-                      {isLocal && " · This device"}
+                      {kindLabel(clinic)} {clinic.id} · {clinic.region}
+                      {isLocal ? " · This device" : ` · ${travelFrom(localClinicId, clinic.id)} away`}
                     </p>
                   </div>
                 </div>
-                <StatusPill status={status} />
+                {clinic.updatedAt === null ? (
+                  <LevelPill label="No report" tone="info" />
+                ) : (
+                  <LevelPill label={status.levelDef.label} tone={status.levelDef.tone} />
+                )}
               </div>
 
-              <div className="mt-4 flex items-end justify-between gap-2">
-                <div>
-                  <p className="text-xs text-slate-500">Patient occupancy</p>
-                  <p className="text-xl font-bold text-[#101B35]">
-                    {clinic.patients}
-                    <span className="text-sm font-normal text-slate-500">
-                      {" "}/ {clinic.capacity}
-                    </span>
-                  </p>
-                </div>
-                <p
-                  className={`text-sm font-bold ${
-                    isOver ? "text-red-700" : "text-slate-600"
-                  }`}
-                >
-                  {percent}%
-                </p>
-              </div>
-
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className={`h-full rounded-full ${
-                    isOver ? "bg-red-600" : percent >= 75 ? "bg-amber-500" : "bg-teal-600"
-                  }`}
-                  style={{ width: `${Math.min(percent, 100)}%` }}
-                />
-              </div>
-
-              {isOver && (
-                <p className="mt-2 text-xs font-semibold text-red-700">
-                  {clinic.patients - clinic.capacity} patients over capacity
+              {status.driver && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Driven by {status.driver.resource.label.toLowerCase()}
                 </p>
               )}
 
-              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <BedDouble size={16} className="text-slate-500" />
-                  <span>
-                    <strong>{freeBeds(clinic)}</strong>{" "}
-                    <span className="text-slate-500">free beds</span>
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Users size={16} className="text-slate-500" />
-                  <span>
-                    <strong>{clinic.staff}</strong>{" "}
-                    <span className="text-slate-500">staff</span>
-                  </span>
-                </div>
-              </div>
+              {hasBeds && (
+                <>
+                  <div className="mt-4 flex items-end justify-between gap-2">
+                    <div>
+                      <p className="text-xs text-slate-500">Bed occupancy</p>
+                      <p className="text-xl font-bold text-[#101B35]">
+                        {occupied(clinic)}
+                        <span className="text-sm font-normal text-slate-500">
+                          {" "}/ {bedCapacity(clinic)}
+                        </span>
+                      </p>
+                    </div>
+                    <p
+                      className={`text-sm font-bold ${
+                        isOver ? "text-red-700" : "text-slate-600"
+                      }`}
+                    >
+                      {percent}%
+                    </p>
+                  </div>
+
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full ${
+                        isOver ? "bg-red-600" : percent >= 75 ? "bg-amber-500" : "bg-teal-600"
+                      }`}
+                      style={{ width: `${Math.min(percent, 100)}%` }}
+                    />
+                  </div>
+
+                  {isOver && (
+                    <p className="mt-2 text-xs font-semibold text-red-700">
+                      {occupied(clinic) - bedCapacity(clinic)} over capacity
+                    </p>
+                  )}
+
+                  <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3 text-sm">
+                    <BedDouble size={16} className="text-slate-500" />
+                    <span>
+                      <strong>{freeBeds(clinic)}</strong>{" "}
+                      <span className="text-slate-500">free beds</span>
+                    </span>
+                  </div>
+                </>
+              )}
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {(
-                  [
-                    ["O₂", clinic.oxygen, LOW_STOCK.oxygen],
-                    ["IV", clinic.fluids, LOW_STOCK.fluids],
-                    ["Antivenom", clinic.antivenom, LOW_STOCK.antivenom],
-                  ] as const
-                ).map(([label, quantity, low]) => {
-                  const level = supplyStatus(quantity, low);
-                  return (
-                    <span
-                      key={label}
-                      className={`rounded px-2 py-1 text-xs ${supplyColor(level)}`}
-                    >
-                      {label}: {quantity} · {level}
-                    </span>
-                  );
-                })}
+                {status.resources
+                  .filter((r) => r.alertable)
+                  .map((r) => (
+                    <ResourceChip key={r.resource.id} status={r} />
+                  ))}
               </div>
 
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs">
@@ -159,6 +202,12 @@ export default function NetworkView({ clinics, localClinicId, onEditLocal }: Pro
           );
         })}
       </div>
+
+      {scope === "network" && visible.length <= 1 && (
+        <p className="mt-3 text-sm text-slate-600">
+          No other places are within reach of {SCENARIO.name}&apos;s {localClinicId}.
+        </p>
+      )}
     </section>
   );
 }

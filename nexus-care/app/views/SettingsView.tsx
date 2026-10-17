@@ -1,5 +1,6 @@
 import { MapPin } from "lucide-react";
-import { LOCAL_CLINIC_ID, SEED_DEMO } from "../lib/directory";
+import { kindLabel } from "../lib/clinic-logic";
+import { LOCAL_CLINIC_ID, SCENARIO, SEED_DEMO, WORLD } from "../lib/directory";
 import type { Clinic, StoreState } from "../lib/types";
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -18,6 +19,11 @@ export default function SettingsView({
   store: StoreState;
   local: Clinic;
 }) {
+  const network = WORLD.networkOf(LOCAL_CLINIC_ID)
+    .map((r) => `${r.id} (${r.minutes} min)`)
+    .join(", ");
+  const hospital = WORLD.nearestHospital(LOCAL_CLINIC_ID);
+
   return (
     <section
       id="settings"
@@ -28,7 +34,13 @@ export default function SettingsView({
         <div className="min-w-0 flex-1">
           <h2 className="font-bold text-[#101B35]">This device</h2>
           <dl className="mt-2">
-            <Row label="Clinic" value={`${LOCAL_CLINIC_ID} — ${local.name}`} />
+            <Row label={kindLabel(local)} value={`${LOCAL_CLINIC_ID} — ${local.name}`} />
+            <Row label="Scenario" value={SCENARIO.name} />
+            <Row label="In my network" value={network || "None"} />
+            <Row
+              label="Nearest hospital"
+              value={hospital ? `${hospital.id} (${hospital.minutes} min)` : "None"}
+            />
             <Row label="Device ID" value={store.deviceId || "…"} />
             <Row
               label="On-device storage"
