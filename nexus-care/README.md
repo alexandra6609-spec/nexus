@@ -1,5 +1,17 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Manual network delay demo
+
+On Linux, `netsim.sh` uses `tc netem` to add a manually chosen outbound delay to a network interface. Install `iproute2`, identify the interface used by the demo, then run:
+
+```sh
+sudo ./netsim.sh apply eth0 250
+sudo ./netsim.sh apply eth0 250 30 # optional 30 ms jitter
+sudo ./netsim.sh clear eth0
+```
+
+Replace `eth0` with the correct interface. The delay affects all outbound traffic on that interface until it is cleared. Applying the simulation replaces the interface's root queue discipline; clearing removes it and does not restore any custom queue discipline that was present before.
+
 ## Getting Started
 
 First, run the development server:

@@ -14,6 +14,7 @@ import PatientsView from "./views/PatientsView";
 import SettingsView from "./views/SettingsView";
 import SyncView from "./views/SyncView";
 import TriageView from "./views/TriageView";
+import DiseaseScanner from "./views/DiseaseScanner";
 
 /**
  * Shell only. Each sidebar item is one file in ./views, and all of them read
@@ -87,6 +88,7 @@ export default function Home() {
                 />
               )}
               {view === "sync" && <SyncView store={store} />}
+              {view === "disease-scanner" && <DiseaseScanner />}
               {view === "settings" && <SettingsView store={store} local={local} />}
             </>
           )}

@@ -17,6 +17,7 @@ import {
   Package,
   Radio,
   Settings,
+  SearchAlert,
   ShieldAlert,
   Stethoscope,
   Users,
@@ -407,6 +408,11 @@ export default function Home() {
                 label: "Sync Status",
                 href: "#sync-status",
                 icon: Radio,
+              },
+              {
+                label: "Disease Scanner",
+                href: "#disease-scanner",
+                icon: SearchAlert,
               },
               {
                 label: "Settings",
