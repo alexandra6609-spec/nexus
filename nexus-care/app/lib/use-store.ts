@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
+import { SYNC_INTERVAL_SECONDS } from "./directory";
 import { defaultTransport, syncNow } from "./sync";
 import { ensureInit, getServerState, getState, subscribe } from "./store";
 
@@ -13,11 +14,12 @@ export function useStore() {
 }
 
 /**
- * Sync only when something happens, never on a timer:
- *   - the device comes back online
+ * Sync when something happens:
+ *   - the device comes back online, or the app is brought back on screen
  *   - new local changes exist (one attempt after a short pause, so a burst of
  *     edits becomes a single radio wake-up)
  * A failed attempt waits for the next event instead of retrying in a loop.
+ * A timer runs only if NEXT_PUBLIC_SYNC_INTERVAL_SECONDS is set.
  */
 export function useAutoSync(pendingCount: number) {
   useEffect(() => {
@@ -26,8 +28,18 @@ export function useAutoSync(pendingCount: number) {
     const run = () => {
       if (navigator.onLine) void syncNow(transport);
     };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") run();
+    };
     window.addEventListener("online", run);
-    return () => window.removeEventListener("online", run);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer =
+      SYNC_INTERVAL_SECONDS > 0 ? setInterval(run, SYNC_INTERVAL_SECONDS * 1000) : undefined;
+    return () => {
+      window.removeEventListener("online", run);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {

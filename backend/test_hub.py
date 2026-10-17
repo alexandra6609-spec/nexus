@@ -84,3 +84,9 @@ def test_separate_phones_have_separate_sessions(client):
     text(client, "hi", "+2222")
     assert "Any of these" in text(client, "1", "+1111")[0]
     assert "Any of these" in text(client, "2", "+2222")[0]
+
+
+def test_phone_page_is_served_by_the_hub(client):
+    response = client.get("/sms")
+    assert response.status_code == 200
+    assert "v1/sms/inbound" in response.text

@@ -63,9 +63,9 @@
     "duration_menu": "How long has it lasted?",
     "invalid": "Please reply with one number.",
     "red": "CODE {code}. Go NOW to {clinic}. Show this code at the desk for fast care. Valid {hours}h.",
-    "yellow": "CODE {code}. Please go to {clinic} today. Show this code at the desk. Valid {hours}h.",
+    "yellow": "CODE {code}. Go to {clinic} today and show this code at the desk. Valid {hours}h.",
     "nearest_clinic": "the nearest clinic",
-    "safety": "Go to a clinic NOW if you get: hard breathing, heavy bleeding, fits, chest pain.",
+    "safety": "Go NOW if: hard breathing, heavy bleeding, fits or chest pain.",
     "repeat_code": "Your code is still {code} for {clinic}. Text RESET to start again.",
     "stopped": "Stopped. Text HI any time to start again."
   }

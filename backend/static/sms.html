@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  DEMO ONLY: stands in for a patient's basic phone. Served by the hub at /sms,
+  separate from the clinic app. It posts to /v1/sms/inbound exactly what a GSM
+  modem or SMS gateway will post later. No external files: works on a LAN
+  with no internet.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patient Phone</title>
+  <style>
+    :root {
+      --bg: #e2e8f0; --phone: #0f172a; --screen: #f1f5f9; --bubble: #ffffff;
+      --text: #1e293b; --muted: #64748b; --mine: #0f766e; --line: #cbd5e1; --error: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #020617; --phone: #334155; --screen: #0f172a; --bubble: #1e293b;
+        --text: #e2e8f0; --muted: #94a3b8; --mine: #0d9488; --line: #334155; --error: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 12px; padding: 16px; background: var(--bg); color: var(--text);
+      font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .note { max-width: 380px; text-align: center; font-size: 13px; color: var(--muted); margin: 0; }
+    .phone {
+      width: 100%; max-width: 380px; height: min(720px, calc(100vh - 100px));
+      display: flex; flex-direction: column; border: 10px solid var(--phone);
+      border-radius: 32px; background: var(--screen); overflow: hidden;
+    }
+    header {
+      display: flex; gap: 8px; align-items: center; padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    header label { font-size: 12px; color: var(--muted); }
+    input, button { font: inherit; }
+    input {
+      flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+      background: var(--bubble); color: var(--text);
+    }
+    #phone { font-family: ui-monospace, monospace; font-size: 13px; padding: 6px 8px; }
+    button {
+      border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer;
+      background: var(--mine); color: #fff; font-weight: 600;
+    }
+    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    button:disabled { opacity: .5; cursor: default; }
+    #log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .msg {
+      max-width: 85%; padding: 8px 12px; border-radius: 14px; white-space: pre-line;
+      background: var(--bubble); box-shadow: 0 1px 1px rgb(0 0 0 / .08);
+    }
+    .msg.me { align-self: flex-end; background: var(--mine); color: #fff; }
+    .empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; }
+    form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+    #error { color: var(--error); font-size: 13px; padding: 0 12px; min-height: 0; margin: 0; }
+  </style>
+</head>
+<body>
+  <p class="note">Demo patient phone. Text anything to start, then reply with numbers.
+    Demo triage rules only, not medical advice.</p>
+
+  <main class="phone">
+    <header>
+      <label for="phone">From</label>
+      <input id="phone" value="+15550001" autocomplete="off">
+      <button type="button" class="ghost" id="reset" title="Start over">Reset</button>
+    </header>
+    <div id="log" aria-live="polite"><p class="empty">No messages yet.</p></div>
+    <p id="error" role="alert"></p>
+    <form id="form">
+      <input id="text" maxlength="160" placeholder="Text message" autocomplete="off" aria-label="Text message">
+      <button id="send" type="submit">Send</button>
+    </form>
+  </main>
+
+  <script>
+    const log = document.getElementById("log");
+    const text = document.getElementById("text");
+    const send = document.getElementById("send");
+    const phone = document.getElementById("phone");
+    const error = document.getElementById("error");
+
+    function add(body, mine) {
+      log.querySelector(".empty")?.remove();
+      const p = document.createElement("p");
+      p.className = mine ? "msg me" : "msg";
+      p.textContent = body;
+      log.appendChild(p);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function sms(body, show = true) {
+      if (!body.trim()) return;
+      send.disabled = true;
+      error.textContent = "";
+      if (show) add(body, true);
+      try {
+        const response = await fetch("v1/sms/inbound", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: phone.value, text: body }),
+        });
+        if (!response.ok) throw new Error(String(response.status));
+        const { replies } = await response.json();
+        for (const reply of replies) add(reply, false);
+      } catch {
+        error.textContent = "No signal: the hub did not answer.";
+      } finally {
+        send.disabled = false;
+        text.focus();
+      }
+    }
+
+    document.getElementById("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const body = text.value;
+      text.value = "";
+      sms(body);
+    });
+
+    document.getElementById("reset").addEventListener("click", () => {
+      log.innerHTML = '<p class="empty">No messages yet.</p>';
+      sms("RESET", false);
+    });
+
+    // A different number is a different patient: clear the screen.
+    phone.addEventListener("change", () => {
+      log.innerHTML = '<p class="empty">No messages yet.</p>';
+    });
+
+    text.focus();
+  </script>
+</body>
+</html>

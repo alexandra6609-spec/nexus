@@ -27,6 +27,16 @@ export const LOCAL_CLINIC_ID: string =
 /** Optional hub URL (FastAPI). Leave unset to run fully offline. */
 export const SYNC_URL = process.env.NEXT_PUBLIC_SYNC_URL ?? "";
 
+/**
+ * Optional: also pull from the hub every N seconds while online. Off (0) by
+ * default to save power and airtime; turn on where new reports must show up
+ * unprompted, e.g. a front desk expecting SMS patients.
+ */
+export const SYNC_INTERVAL_SECONDS = Math.max(
+  0,
+  Number(process.env.NEXT_PUBLIC_SYNC_INTERVAL_SECONDS) || 0
+);
+
 /** Load fictional demo data on first run. Set to "false" for real deployments. */
 export const SEED_DEMO = process.env.NEXT_PUBLIC_SEED_DEMO !== "false";
 

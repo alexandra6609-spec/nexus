@@ -12,7 +12,6 @@ import NetworkView from "./views/NetworkView";
 import OverviewView from "./views/OverviewView";
 import PatientsView from "./views/PatientsView";
 import SettingsView from "./views/SettingsView";
-import SmsSimulatorView from "./views/SmsSimulatorView";
 import SyncView from "./views/SyncView";
 import TriageView from "./views/TriageView";
 
@@ -86,7 +85,6 @@ export default function Home() {
                 />
               )}
               {view === "sync" && <SyncView store={store} />}
-              {view === "sms" && <SmsSimulatorView />}
               {view === "settings" && <SettingsView store={store} local={local} />}
             </>
           )}

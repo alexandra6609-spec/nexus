@@ -12,6 +12,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 import storage
@@ -90,6 +91,15 @@ def pull(
 
 
 # ------------------------------------------------------------- SMS triage
+
+PHONE_PAGE = triage.Path(__file__).with_name("static") / "sms.html"
+
+
+@app.get("/sms", include_in_schema=False)
+def phone_page() -> FileResponse:
+    """Demo patient phone, kept apart from the clinic app. Open it from any LAN device."""
+    return FileResponse(PHONE_PAGE)
+
 
 class InboundSms(BaseModel):
     # Same shape a modem daemon or SMS gateway webhook will post later.

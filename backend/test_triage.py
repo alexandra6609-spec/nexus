@@ -150,3 +150,15 @@ def test_phone_hash_is_stable_and_not_the_number():
 def test_every_menu_is_one_sms(menu):
     # A menu split over two messages can arrive out of order or half-read.
     assert len(triage.MENUS[menu](RULES)) <= triage.SMS_LIMIT
+
+
+def test_split_sms_keeps_lines_whole():
+    assert triage.split_sms("a" * 100 + "\n" + "b" * 100) == ["a" * 100, "b" * 100]
+
+
+@pytest.mark.parametrize("level", ["RED", "YELLOW"])
+def test_token_reply_is_one_sms_even_for_unlisted_area(level):
+    # Unlisted area gives the longest clinic text ("the nearest clinic").
+    path = ["hi", "0", "1"] if level == "RED" else ["hi", "0", "0", "4", "1"]
+    _, replies, _ = run(path)
+    assert len(replies) == 1

@@ -66,21 +66,30 @@ def hash_phone(phone: str, secret: str) -> str:
 # ------------------------------------------------------------------- texts
 
 def split_sms(text: str, limit: int = SMS_LIMIT) -> list[str]:
-    """Break on line ends or spaces so each part fits one SMS."""
+    """Fit text into SMS-sized parts, keeping whole lines together where possible."""
     parts: list[str] = []
     current = ""
-    for word in re.split(r"(\s+)", text):
-        if len(current) + len(word) <= limit:
-            current += word
+    for line in text.split("\n"):
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
             continue
-        if current.strip():
-            parts.append(current.strip())
-        current = word.lstrip()
-        while len(current) > limit:  # a single word longer than one SMS
-            parts.append(current[:limit])
-            current = current[limit:]
-    if current.strip():
-        parts.append(current.strip())
+        if current:
+            parts.append(current)
+        current = ""
+        for word in line.split(" "):  # a line longer than one SMS: break on spaces
+            candidate = f"{current} {word}" if current else word
+            if len(candidate) <= limit:
+                current = candidate
+                continue
+            if current:
+                parts.append(current)
+            while len(word) > limit:
+                parts.append(word[:limit])
+                word = word[limit:]
+            current = word
+    if current:
+        parts.append(current)
     return parts
 
 
