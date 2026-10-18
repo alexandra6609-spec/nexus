@@ -35,6 +35,17 @@ export type Transfer = {
 /** SMS triage: RED = go now, YELLOW = see a clinic today. Issued by the hub. */
 export type TriageLevel = "RED" | "YELLOW";
 
+export type AlertKind = "crisis" | "mass-casualty";
+
+export type AlertData = {
+  alert: AlertKind;
+  resource: string | null;
+  casualties: number | null;
+  note: string;
+};
+
+export type EmergencyAlert = AlertData & { id: string; from: ClinicId; ts: number };
+
 /** One SMS question and the patient's answer, in words. Built by the hub. */
 export type TriageInput = { question: string; answer: string };
 
@@ -79,6 +90,7 @@ export type LedgerEntry =
       data: { transferId: string; status: TransferStatus };
     })
   | (EntryBase & { kind: "triage.token"; data: TriageTokenData })
+   | (EntryBase & { kind: "alert.emergency"; data: AlertData })
   | (EntryBase & {
       kind: "triage.arrived";
       data: { tokenId: string; code: string };
@@ -101,6 +113,7 @@ export type StoreState = {
   clinics: Clinic[];
   transfers: Transfer[];
   tokens: TriageToken[];
+  alerts: EmergencyAlert[];
   pendingCount: number;
   sync: SyncState;
 };

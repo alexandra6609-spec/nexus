@@ -1,5 +1,6 @@
 """Hub API tests: SMS endpoint, token lookup, and ledger sync of tokens."""
 import importlib
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -77,6 +78,26 @@ def test_hub_entries_reach_tablets_and_lamport_moves_forward(client):
     pulled = client.get("/v1/ledger", params={"exclude_device": "tab1"}).json()["entries"]
     assert [e["kind"] for e in pulled] == ["triage.token"]
     assert pulled[0]["lc"] == 42
+
+
+def test_emergency_alert_is_available_on_alert_and_ledger_routes(client):
+    alert = {
+        "id": "tab1-1-alert",
+        "clinicId": "A",
+        "device": "tab1",
+        "lc": 1,
+        "ts": int(time.time() * 1000),
+        "kind": "alert.emergency",
+        "data": {
+            "alert": "crisis",
+            "resource": "oxygen",
+            "casualties": None,
+            "note": "",
+        },
+    }
+    assert client.post("/v1/ledger", json={"entries": [alert]}).status_code == 200
+    assert client.get("/v1/ledger").json()["entries"] == [alert]
+    assert client.get("/v1/alerts", params={"minutes": 240}).json()["entries"] == [alert]
 
 
 def test_separate_phones_have_separate_sessions(client):

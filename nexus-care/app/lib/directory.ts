@@ -37,6 +37,13 @@ export const SYNC_INTERVAL_SECONDS = Math.max(
   Number(process.env.NEXT_PUBLIC_SYNC_INTERVAL_SECONDS) || 0
 );
 
+export const ALERT_URL = process.env.NEXT_PUBLIC_ALERT_URL ?? SYNC_URL;
+
+export const ALERT_POLL_SECONDS = Math.max(
+  3,
+  Number(process.env.NEXT_PUBLIC_ALERT_POLL_SECONDS) || 10
+);
+
 /** Load fictional demo data on first run. Set to "false" for real deployments. */
 export const SEED_DEMO = process.env.NEXT_PUBLIC_SEED_DEMO !== "false";
 

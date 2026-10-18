@@ -1,6 +1,7 @@
 import { EMPTY_REPORT, INPUT_RESOURCES, PLACES } from "./directory";
 import type {
   Clinic,
+  EmergencyAlert,
   ClinicProfile,
   LedgerEntry,
   StockReport,
@@ -64,6 +65,19 @@ function readInputs(value: unknown): TriageInput[] {
 }
 
 /** Token data comes from the hub over the air: check it like any outside input. */
+function readAlert(data: unknown): Omit<EmergencyAlert, "id" | "from" | "ts"> | null {
+  const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
+  if (d.alert !== "crisis" && d.alert !== "mass-casualty") return null;
+  return {
+    alert: d.alert,
+    resource: typeof d.resource === "string" ? d.resource.slice(0, 32) : null,
+    casualties:
+      typeof d.casualties === "number" && Number.isFinite(d.casualties) && d.casualties > 0
+        ? Math.min(Math.floor(d.casualties), 500)
+        : null,
+    note: typeof d.note === "string" ? d.note.slice(0, 120) : "",
+  };
+}
 function readToken(data: unknown): TriageTokenData | null {
   const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
   if (typeof d.code !== "string" || (d.level !== "RED" && d.level !== "YELLOW")) return null;
@@ -83,12 +97,13 @@ function readToken(data: unknown): TriageTokenData | null {
 export function deriveState(
   entries: Iterable<LedgerEntry>,
   directory: ClinicProfile[] = PLACES
-): { clinics: Clinic[]; transfers: Transfer[]; tokens: TriageToken[] } {
+): { clinics: Clinic[]; transfers: Transfer[]; tokens: TriageToken[]; alerts: EmergencyAlert[] } {
   const latestStock = new Map<string, StockEntry>();
   const transfers = new Map<string, Transfer>();
   const statusUpdates: Extract<LedgerEntry, { kind: "transfer.status" }>[] = [];
   const tokens = new Map<string, TriageToken>();
   const arrivals: Extract<LedgerEntry, { kind: "triage.arrived" }>[] = [];
+  const alerts: EmergencyAlert[] = [];
 
   for (const entry of entries) {
     if (entry.kind === "stock.declared") {
@@ -112,6 +127,9 @@ export function deriveState(
       if (data) tokens.set(entry.id, { ...data, id: entry.id, issuedAt: entry.ts, arrived: null });
     } else if (entry.kind === "triage.arrived") {
       arrivals.push(entry);
+    } else if (entry.kind === "alert.emergency") {
+      const data = readAlert(entry.data);
+      if (data) alerts.push({ ...data, id: entry.id, from: entry.clinicId, ts: entry.ts });
     }
   }
 
@@ -145,6 +163,7 @@ export function deriveState(
         Number(b.ambulance === true) - Number(a.ambulance === true) ||
         b.issuedAt - a.issuedAt
     ),
+    alerts: alerts.sort((a, b) => b.ts - a.ts).slice(0, 20),
   };
 }
 
@@ -154,6 +173,7 @@ const KINDS = [
   "transfer.status",
   "triage.token",
   "triage.arrived",
+  "alert.emergency",
 ];
 
 /** Shape check for entries arriving from outside (hub, radio, USB file). */

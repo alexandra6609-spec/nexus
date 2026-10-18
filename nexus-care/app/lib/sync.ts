@@ -1,4 +1,4 @@
-import { LOCAL_CLINIC_ID, SYNC_URL } from "./directory";
+import { ALERT_URL, LOCAL_CLINIC_ID, SYNC_URL } from "./directory";
 import {
   getAllEntries,
   getCursor,
@@ -71,6 +71,39 @@ export function httpTransport(baseUrl: string): Transport {
 /** null when no hub is configured: the app simply stays fully offline. */
 export function defaultTransport(): Transport | null {
   return SYNC_URL ? httpTransport(SYNC_URL) : null;
+}
+
+export async function sendUrgent(entry: LedgerEntry): Promise<boolean> {
+  if (!ALERT_URL) return false;
+  const transport = httpTransport(ALERT_URL);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const accepted = await transport.push([entry]);
+      markSynced(accepted.filter((id) => id === entry.id));
+      return accepted.includes(entry.id);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  return false;
+}
+
+export async function pullAlerts(): Promise<void> {
+  if (!ALERT_URL) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(`${ALERT_URL.replace(/\/$/, "")}/v1/alerts?minutes=30`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) return;
+    const body = (await response.json()) as { entries?: unknown };
+    if (Array.isArray(body.entries)) mergeRemote(body.entries);
+  } catch {
+    // The normal sync will catch up when a link allows.
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 let running = false;

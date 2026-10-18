@@ -3,6 +3,7 @@ import { deriveState, isLedgerEntry } from "./ledger";
 import * as db from "./local-db";
 import { demoEntries } from "./seed";
 import type {
+  AlertData,
   ClinicId,
   LedgerEntry,
   StockReport,
@@ -178,6 +179,13 @@ export async function setTransferStatus(
 ) {
   await ensureInit();
   commit(author("transfer.status", { transferId, status }));
+}
+
+export async function sendEmergency(data: AlertData): Promise<LedgerEntry> {
+  await ensureInit();
+  const entry = author("alert.emergency", data);
+  commit(entry);
+  return strip(entry);
 }
 
 /** A patient with an SMS token has arrived at this clinic's desk. */

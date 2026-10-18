@@ -49,7 +49,7 @@ class Entry(BaseModel):
     ts: int = Field(ge=0)
     kind: Literal[
         "stock.declared", "transfer.requested", "transfer.status",
-        "triage.token", "triage.arrived",
+        "triage.token", "triage.arrived", "alert.emergency",
     ]
     data: dict
 
@@ -76,6 +76,14 @@ def push(body: PushBody) -> dict:
     with closing(storage.connect(DB_PATH)) as conn:
         ids = storage.insert_entries(conn, [e.model_dump() for e in body.entries])
     return {"ids": ids}
+
+
+@app.get("/v1/alerts")
+def recent_alerts(minutes: int = Query(30, ge=1, le=240)) -> dict:
+    """Only the emergency alerts of the last few minutes: a few hundred bytes."""
+    since = int(time.time() * 1000) - minutes * 60_000
+    with closing(storage.connect(DB_PATH)) as conn:
+        return {"entries": storage.recent_entries(conn, "alert.emergency", since)}
 
 
 @app.get("/v1/ledger")

@@ -82,6 +82,22 @@ def entries_after(
     cursor = rows[-1]["seq"] if rows else after
     return entries, cursor, more
 
+def recent_entries(
+    conn: sqlite3.Connection, kind: str, since_ms: int, limit: int = 50
+) -> list[dict]:
+    """Newest entries of one kind written at or after `since_ms`."""
+    rows = conn.execute(
+        "SELECT * FROM ledger WHERE kind = ? AND ts >= ? ORDER BY seq DESC LIMIT ?",
+        (kind, since_ms, limit),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"], "clinicId": r["clinic_id"], "device": r["device"],
+            "lc": r["lc"], "ts": r["ts"], "kind": r["kind"],
+            "data": json.loads(r["data"]),
+        }
+        for r in rows
+    ]
 
 # ------------------------------------------------------------- SMS triage
 
