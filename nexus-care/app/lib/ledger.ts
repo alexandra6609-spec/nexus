@@ -1,4 +1,11 @@
-import { EMPTY_REPORT, INPUT_RESOURCES, PLACES } from "./directory";
+import {
+  EMPTY_REPORT,
+  INPUT_RESOURCES,
+  PLACES,
+  SCENARIO,
+  TRANSFER_RESOURCES,
+} from "./directory";
+import { evaluatePlace } from "./levels";
 import type {
   Clinic,
   EmergencyAlert,
@@ -23,6 +30,15 @@ export function compareEntries(a: LedgerEntry, b: LedgerEntry) {
 }
 
 type StockEntry = Extract<LedgerEntry, { kind: "stock.declared" }>;
+
+/** Stock reports at Low, Critical, or Urgent priority are eligible for auto-sync. */
+export function isPriorityStockEntry(entry: LedgerEntry): boolean {
+  if (entry.kind !== "stock.declared") return false;
+  const place = PLACES.find((candidate) => candidate.id === entry.clinicId);
+  if (!place) return false;
+  const report = normalizeReport(entry.data);
+  return evaluatePlace(SCENARIO, place, report.quantities, true).level > 0;
+}
 
 /**
  * Entries come from other tablets, files and older versions of this app, so
@@ -101,6 +117,9 @@ export function deriveState(
   const latestStock = new Map<string, StockEntry>();
   const transfers = new Map<string, Transfer>();
   const statusUpdates: Extract<LedgerEntry, { kind: "transfer.status" }>[] = [];
+  const supplyTransfers: Extract<LedgerEntry, { kind: "supply.transferred" }>[] = [];
+  const fulfilledRequestIds = new Set<string>();
+  const fulfilledAlertIds = new Set<string>();
   const tokens = new Map<string, TriageToken>();
   const arrivals: Extract<LedgerEntry, { kind: "triage.arrived" }>[] = [];
   const alerts: EmergencyAlert[] = [];
@@ -122,6 +141,10 @@ export function deriveState(
       });
     } else if (entry.kind === "transfer.status") {
       statusUpdates.push(entry);
+    } else if (entry.kind === "supply.transferred") {
+      supplyTransfers.push(entry);
+      if (entry.data.requestId) fulfilledRequestIds.add(entry.data.requestId);
+      if (entry.data.alertId) fulfilledAlertIds.add(entry.data.alertId);
     } else if (entry.kind === "triage.token") {
       const data = readToken(entry.data);
       if (data) tokens.set(entry.id, { ...data, id: entry.id, issuedAt: entry.ts, arrived: null });
@@ -146,11 +169,39 @@ export function deriveState(
     if (transfer) transfer.status = update.data.status;
   }
 
+  for (const requestId of fulfilledRequestIds) {
+    const transfer = transfers.get(requestId);
+    if (transfer) transfer.status = "Confirmed";
+  }
+
   const clinics: Clinic[] = directory.map((profile) => {
     const entry = latestStock.get(profile.id);
-    const report: StockReport = entry ? normalizeReport(entry.data) : EMPTY_REPORT;
+    const report: StockReport = entry
+      ? normalizeReport(entry.data)
+      : { ...EMPTY_REPORT, quantities: { ...EMPTY_REPORT.quantities } };
     return { ...profile, ...report, updatedAt: entry ? entry.ts : null };
   });
+
+  const clinicsById = new Map(clinics.map((clinic) => [clinic.id, clinic]));
+  supplyTransfers.sort(compareEntries);
+  for (const transfer of supplyTransfers) {
+    const { from, to, resource, quantity } = transfer.data;
+    const sender = clinicsById.get(from);
+    const receiver = clinicsById.get(to);
+    const senderReport = latestStock.get(from);
+    const receiverReport = latestStock.get(to);
+    const afterSenderReport = !senderReport || compareEntries(transfer, senderReport) > 0;
+    const afterReceiverReport = !receiverReport || compareEntries(transfer, receiverReport) > 0;
+
+    if (sender && afterSenderReport) {
+      sender.quantities[resource] = Math.max(0, (sender.quantities[resource] ?? 0) - quantity);
+      sender.updatedAt = Math.max(sender.updatedAt ?? 0, transfer.ts);
+    }
+    if (receiver && afterReceiverReport) {
+      receiver.quantities[resource] = (receiver.quantities[resource] ?? 0) + quantity;
+      receiver.updatedAt = Math.max(receiver.updatedAt ?? 0, transfer.ts);
+    }
+  }
 
   return {
     clinics,
@@ -163,7 +214,10 @@ export function deriveState(
         Number(b.ambulance === true) - Number(a.ambulance === true) ||
         b.issuedAt - a.issuedAt
     ),
-    alerts: alerts.sort((a, b) => b.ts - a.ts).slice(0, 20),
+    alerts: alerts
+      .map((alert) => ({ ...alert, fulfilled: fulfilledAlertIds.has(alert.id) }))
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 20),
   };
 }
 
@@ -171,6 +225,7 @@ const KINDS = [
   "stock.declared",
   "transfer.requested",
   "transfer.status",
+  "supply.transferred",
   "triage.token",
   "triage.arrived",
   "alert.emergency",
@@ -180,7 +235,7 @@ const KINDS = [
 export function isLedgerEntry(value: unknown): value is LedgerEntry {
   if (typeof value !== "object" || value === null) return false;
   const e = value as Record<string, unknown>;
-  return (
+  const validBase =
     typeof e.id === "string" &&
     e.id.length > 0 &&
     e.id.length <= 64 &&
@@ -191,6 +246,17 @@ export function isLedgerEntry(value: unknown): value is LedgerEntry {
     typeof e.kind === "string" &&
     KINDS.includes(e.kind) &&
     typeof e.data === "object" &&
-    e.data !== null
+    e.data !== null;
+  if (!validBase) return false;
+  if (e.kind !== "supply.transferred") return true;
+  const data = e.data as Record<string, unknown>;
+  return (
+    typeof data.from === "string" &&
+    typeof data.to === "string" &&
+    TRANSFER_RESOURCES.some((resource) => resource.id === data.resource) &&
+    Number.isInteger(data.quantity) &&
+    (data.quantity as number) > 0 &&
+    (data.requestId === undefined || typeof data.requestId === "string") &&
+    (data.alertId === undefined || typeof data.alertId === "string")
   );
 }

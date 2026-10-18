@@ -109,13 +109,16 @@ export async function pullAlerts(): Promise<void> {
 let running = false;
 
 /** One push-then-pull round. Never throws; the outcome lands in store state. */
-export async function syncNow(transport: Transport) {
+export async function syncNow(
+  transport: Transport,
+  options: { includeRoutineStock?: boolean } = {}
+) {
   if (running) return;
   running = true;
   setSync({ syncing: true, lastAttemptAt: Date.now(), error: null });
 
   try {
-    const pending = getPending();
+    const pending = getPending(options.includeRoutineStock);
     for (let i = 0; i < pending.length; i += PUSH_CHUNK) {
       const chunk = pending.slice(i, i + PUSH_CHUNK);
       const sent = new Set(chunk.map((entry) => entry.id));

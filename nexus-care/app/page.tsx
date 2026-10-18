@@ -5,8 +5,10 @@ import { AlertTriangle } from "lucide-react";
 import Header from "./components/Header";
 import Sidebar, { NAV_ITEMS, type ViewId } from "./components/Sidebar";
 import { LOCAL_CLINIC_ID, SCENARIO } from "./lib/directory";
-import { declareStock, markArrived, requestTransfer } from "./lib/store";
+import { declareStock, markArrived, requestTransfer, transferSupply } from "./lib/store";
+import { sendUrgent } from "./lib/sync";
 import { useAutoSync, useStore } from "./lib/use-store";
+import AlertBanner from "./components/AlertBanner";
 import InventoryView from "./views/InventoryView";
 import NetworkView from "./views/NetworkView";
 import OverviewView from "./views/OverviewView";
@@ -15,6 +17,7 @@ import SettingsView from "./views/SettingsView";
 import SyncView from "./views/SyncView";
 import TriageView from "./views/TriageView";
 import DiseaseScanner from "./views/DiseaseScanner";
+import EmergencyPanel from "./views/EmergencyPanel";
 
 /**
  * Shell only. Each sidebar item is one file in ./views, and all of them read
@@ -23,7 +26,7 @@ import DiseaseScanner from "./views/DiseaseScanner";
  */
 export default function Home() {
   const store = useStore();
-  useAutoSync(store.pendingCount);
+  useAutoSync(store.autoPendingCount);
   const [view, setView] = useState<ViewId>("inventory");
 
   const local =
@@ -57,6 +60,15 @@ export default function Home() {
             <p className="text-sm text-slate-500">Opening this clinic&apos;s saved data…</p>
           ) : (
             <>
+              <AlertBanner
+                local={local}
+                clinics={store.clinics}
+                alerts={store.alerts}
+                onFulfill={async (alertId, to, resource) => {
+                  const entry = await transferSupply(to, resource, 1, { alertId });
+                  await sendUrgent(entry);
+                }}
+              />
               {view === "overview" && <OverviewView clinics={store.clinics} />}
               {view === "patients" && (
                 <PatientsView local={local} clinics={store.clinics} tokens={store.tokens} />
@@ -71,6 +83,9 @@ export default function Home() {
                   onRequest={(clinic) =>
                     requestTransfer(clinic.id, "Confirm beds, supplies and receiving staff")
                   }
+                  onFulfill={async (to, resource, requestId) => {
+                    await transferSupply(to, resource, 1, { requestId });
+                  }}
                 />
               )}
               {view === "network" && (
@@ -78,8 +93,12 @@ export default function Home() {
                   clinics={store.clinics}
                   localClinicId={local.id}
                   onEditLocal={() => setView("inventory")}
+                  onSendSupply={async (to, resource) => {
+                    await transferSupply(to, resource);
+                  }}
                 />
               )}
+              {view === "triage" && <EmergencyPanel local={local} clinics={store.clinics} />}
               {view === "inventory" && (
                 <InventoryView
                   local={local}

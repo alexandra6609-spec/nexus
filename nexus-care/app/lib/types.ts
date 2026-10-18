@@ -44,7 +44,12 @@ export type AlertData = {
   note: string;
 };
 
-export type EmergencyAlert = AlertData & { id: string; from: ClinicId; ts: number };
+export type EmergencyAlert = AlertData & {
+  id: string;
+  from: ClinicId;
+  ts: number;
+  fulfilled?: boolean;
+};
 
 /** One SMS question and the patient's answer, in words. Built by the hub. */
 export type TriageInput = { question: string; answer: string };
@@ -89,6 +94,17 @@ export type LedgerEntry =
       kind: "transfer.status";
       data: { transferId: string; status: TransferStatus };
     })
+  | (EntryBase & {
+      kind: "supply.transferred";
+      data: {
+        from: ClinicId;
+        to: ClinicId;
+        resource: string;
+        quantity: number;
+        requestId?: string;
+        alertId?: string;
+      };
+    })
   | (EntryBase & { kind: "triage.token"; data: TriageTokenData })
    | (EntryBase & { kind: "alert.emergency"; data: AlertData })
   | (EntryBase & {
@@ -115,5 +131,6 @@ export type StoreState = {
   tokens: TriageToken[];
   alerts: EmergencyAlert[];
   pendingCount: number;
+  autoPendingCount: number;
   sync: SyncState;
 };

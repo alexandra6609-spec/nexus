@@ -49,7 +49,7 @@ class Entry(BaseModel):
     ts: int = Field(ge=0)
     kind: Literal[
         "stock.declared", "transfer.requested", "transfer.status",
-        "triage.token", "triage.arrived", "alert.emergency",
+        "triage.token", "triage.arrived", "alert.emergency", "supply.transferred",
     ]
     data: dict
 

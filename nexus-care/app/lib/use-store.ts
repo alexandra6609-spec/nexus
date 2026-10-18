@@ -21,7 +21,7 @@ export function useStore() {
  * A failed attempt waits for the next event instead of retrying in a loop.
  * A timer runs only if NEXT_PUBLIC_SYNC_INTERVAL_SECONDS is set.
  */
-export function useAutoSync(pendingCount: number) {
+export function useAutoSync(autoPendingCount: number) {
   useEffect(() => {
     const transport = defaultTransport();
     if (!transport) return;
@@ -44,8 +44,8 @@ export function useAutoSync(pendingCount: number) {
 
   useEffect(() => {
     const transport = defaultTransport();
-    if (!transport || pendingCount === 0 || !navigator.onLine) return;
+    if (!transport || autoPendingCount === 0 || !navigator.onLine) return;
     const timer = setTimeout(() => void syncNow(transport), 3000);
     return () => clearTimeout(timer);
-  }, [pendingCount]);
+  }, [autoPendingCount]);
 }

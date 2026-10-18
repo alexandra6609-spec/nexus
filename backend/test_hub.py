@@ -100,6 +100,26 @@ def test_emergency_alert_is_available_on_alert_and_ledger_routes(client):
     assert client.get("/v1/alerts", params={"minutes": 240}).json()["entries"] == [alert]
 
 
+def test_supply_transfer_entry_is_accepted_and_synced(client):
+    transfer = {
+        "id": "tab1-supply-1",
+        "clinicId": "A",
+        "device": "tab1",
+        "lc": 1,
+        "ts": 1,
+        "kind": "supply.transferred",
+        "data": {
+            "from": "A",
+            "to": "B",
+            "resource": "oxygen",
+            "quantity": 1,
+            "requestId": "request-1",
+        },
+    }
+    assert client.post("/v1/ledger", json={"entries": [transfer]}).status_code == 200
+    assert transfer in ledger(client)
+
+
 def test_separate_phones_have_separate_sessions(client):
     text(client, "hi", "+1111")
     text(client, "hi", "+2222")

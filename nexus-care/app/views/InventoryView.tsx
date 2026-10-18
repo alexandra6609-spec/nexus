@@ -41,8 +41,8 @@ export default function InventoryView({ local, pendingCount, onSave }: Props) {
               Declare Stock and Capacity
             </h2>
             <p className="text-xs text-slate-500">
-              Saved on this device immediately. Other places receive it when a
-              link is available.
+              Saved locally first. Low, Critical, and Urgent reports sync automatically;
+              Normal reports wait for you to choose Sync now in Sync Status.
             </p>
           </div>
         </div>

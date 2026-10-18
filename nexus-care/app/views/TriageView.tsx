@@ -14,6 +14,7 @@ type Props = {
   tokens: TriageToken[];
   onRequest: (clinic: Clinic) => Promise<void>;
   onArrived: (token: TriageToken) => Promise<void>;
+  onFulfill: (to: string, resource: string, requestId: string) => Promise<void>;
 };
 
 /** Triage: SMS patients on their way, where to send overflow, and requests raised. */
@@ -24,6 +25,7 @@ export default function TriageView({
   tokens,
   onRequest,
   onArrived,
+  onFulfill,
 }: Props) {
   const [notice, setNotice] = useState("");
 
@@ -46,7 +48,12 @@ export default function TriageView({
           );
         }}
       />
-      <CoordinationRequests transfers={transfers} clinics={clinics} />
+      <CoordinationRequests
+        transfers={transfers}
+        clinics={clinics}
+        local={local}
+        onFulfill={onFulfill}
+      />
     </>
   );
 }

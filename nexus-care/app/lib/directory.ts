@@ -17,6 +17,13 @@ export const PLACES: Place[] = SCENARIO.places;
 /** Resources people type in (calculated ones, like occupancy, are excluded). */
 export const INPUT_RESOURCES: ResourceDef[] = SCENARIO.resources.filter((r) => !r.percentOf);
 
+/** Resources that can be moved between places (not occupancy or capacity). */
+export const TRANSFER_RESOURCES = INPUT_RESOURCES.filter(
+  (resource) =>
+    resource.id !== SCENARIO.roles?.occupied &&
+    resource.id !== SCENARIO.roles?.capacity
+);
+
 /** The place this tablet belongs to. Set per device in .env.local. */
 const requested = process.env.NEXT_PUBLIC_CLINIC_ID;
 export const LOCAL_CLINIC_ID: string =

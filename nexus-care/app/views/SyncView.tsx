@@ -80,7 +80,9 @@ export default function SyncView({ store }: { store: StoreState }) {
             type="button"
             className={buttonClass}
             disabled={!transport || store.sync.syncing}
-            onClick={() => transport && void syncNow(transport)}
+            onClick={() =>
+              transport && void syncNow(transport, { includeRoutineStock: true })
+            }
           >
             <RefreshCw size={16} />
             {store.sync.syncing ? "Syncing…" : "Sync now"}
