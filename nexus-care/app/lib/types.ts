@@ -71,6 +71,23 @@ export type TriageToken = TriageTokenData & {
   arrived: { clinicId: ClinicId; at: number } | null;
 };
 
+export type SmsMessageData = {
+  conversationId: string;
+  messageId: string;
+  replyTo: string | null;
+  phoneHash: string;
+  direction: "inbound" | "outbound";
+  part: number;
+  body: string;
+};
+
+export type SmsMessage = SmsMessageData & {
+  id: string;
+  clinicId: ClinicId;
+  ts: number;
+  sequence: number;
+};
+
 /**
  * Ledger entries are immutable and globally unique by `id`, so merging two
  * ledgers is a set union. Duplicates (same id) are ignored, which makes every
@@ -106,7 +123,8 @@ export type LedgerEntry =
       };
     })
   | (EntryBase & { kind: "triage.token"; data: TriageTokenData })
-   | (EntryBase & { kind: "alert.emergency"; data: AlertData })
+  | (EntryBase & { kind: "sms.message"; data: SmsMessageData })
+  | (EntryBase & { kind: "alert.emergency"; data: AlertData })
   | (EntryBase & {
       kind: "triage.arrived";
       data: { tokenId: string; code: string };
@@ -129,6 +147,7 @@ export type StoreState = {
   clinics: Clinic[];
   transfers: Transfer[];
   tokens: TriageToken[];
+  smsMessages: SmsMessage[];
   alerts: EmergencyAlert[];
   pendingCount: number;
   autoPendingCount: number;

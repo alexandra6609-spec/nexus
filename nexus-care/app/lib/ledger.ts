@@ -8,9 +8,11 @@ import {
 import { evaluatePlace } from "./levels";
 import type {
   Clinic,
-  EmergencyAlert,
   ClinicProfile,
+  EmergencyAlert,
   LedgerEntry,
+  SmsMessage,
+  SmsMessageData,
   StockReport,
   Transfer,
   TriageInput,
@@ -109,11 +111,40 @@ function readToken(data: unknown): TriageTokenData | null {
   };
 }
 
+function readSmsMessage(data: unknown): SmsMessageData | null {
+  const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
+  if (
+    typeof d.conversationId !== "string" ||
+    typeof d.messageId !== "string" ||
+    typeof d.phoneHash !== "string" ||
+    (d.direction !== "inbound" && d.direction !== "outbound") ||
+    typeof d.body !== "string" ||
+    !Number.isInteger(d.part)
+  ) {
+    return null;
+  }
+  return {
+    conversationId: d.conversationId.slice(0, 128),
+    messageId: d.messageId.slice(0, 128),
+    replyTo: typeof d.replyTo === "string" ? d.replyTo.slice(0, 128) : null,
+    phoneHash: d.phoneHash.slice(0, 64),
+    direction: d.direction,
+    part: Math.max(0, Math.floor(d.part as number)),
+    body: d.body.slice(0, 1600),
+  };
+}
+
 /** Fold the ledger into what the screens show. Pure, so it is easy to test. */
 export function deriveState(
   entries: Iterable<LedgerEntry>,
   directory: ClinicProfile[] = PLACES
-): { clinics: Clinic[]; transfers: Transfer[]; tokens: TriageToken[]; alerts: EmergencyAlert[] } {
+): {
+  clinics: Clinic[];
+  transfers: Transfer[];
+  tokens: TriageToken[];
+  smsMessages: SmsMessage[];
+  alerts: EmergencyAlert[];
+} {
   const latestStock = new Map<string, StockEntry>();
   const transfers = new Map<string, Transfer>();
   const statusUpdates: Extract<LedgerEntry, { kind: "transfer.status" }>[] = [];
@@ -121,6 +152,7 @@ export function deriveState(
   const fulfilledRequestIds = new Set<string>();
   const fulfilledAlertIds = new Set<string>();
   const tokens = new Map<string, TriageToken>();
+  const smsMessages: SmsMessage[] = [];
   const arrivals: Extract<LedgerEntry, { kind: "triage.arrived" }>[] = [];
   const alerts: EmergencyAlert[] = [];
 
@@ -148,6 +180,17 @@ export function deriveState(
     } else if (entry.kind === "triage.token") {
       const data = readToken(entry.data);
       if (data) tokens.set(entry.id, { ...data, id: entry.id, issuedAt: entry.ts, arrived: null });
+    } else if (entry.kind === "sms.message") {
+      const data = readSmsMessage(entry.data);
+      if (data) {
+        smsMessages.push({
+          ...data,
+          id: entry.id,
+          clinicId: entry.clinicId,
+          ts: entry.ts,
+          sequence: entry.lc,
+        });
+      }
     } else if (entry.kind === "triage.arrived") {
       arrivals.push(entry);
     } else if (entry.kind === "alert.emergency") {
@@ -214,6 +257,9 @@ export function deriveState(
         Number(b.ambulance === true) - Number(a.ambulance === true) ||
         b.issuedAt - a.issuedAt
     ),
+    smsMessages: smsMessages.sort(
+      (a, b) => a.ts - b.ts || a.sequence - b.sequence || a.id.localeCompare(b.id)
+    ),
     alerts: alerts
       .map((alert) => ({ ...alert, fulfilled: fulfilledAlertIds.has(alert.id) }))
       .sort((a, b) => b.ts - a.ts)
@@ -227,6 +273,7 @@ const KINDS = [
   "transfer.status",
   "supply.transferred",
   "triage.token",
+  "sms.message",
   "triage.arrived",
   "alert.emergency",
 ];
@@ -248,6 +295,10 @@ export function isLedgerEntry(value: unknown): value is LedgerEntry {
     typeof e.data === "object" &&
     e.data !== null;
   if (!validBase) return false;
+  if (e.kind === "sms.message") {
+    const data = readSmsMessage(e.data);
+    return data !== null;
+  }
   if (e.kind !== "supply.transferred") return true;
   const data = e.data as Record<string, unknown>;
   return (

@@ -29,6 +29,27 @@ CREATE TABLE IF NOT EXISTS sms_sessions (
   state      TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS relay_state (
+  name   TEXT PRIMARY KEY,
+  cursor INTEGER NOT NULL DEFAULT 0
+);
+
+-- The raw phone number is never stored. message_id makes gateway retries safe.
+CREATE TABLE IF NOT EXISTS sms_messages (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id TEXT NOT NULL,
+  conversation_id TEXT,
+  phone_hash TEXT NOT NULL,
+  direction  TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  body       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  reply_to   TEXT,
+  part       INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (message_id, direction, part)
+);
+CREATE INDEX IF NOT EXISTS sms_messages_phone ON sms_messages(phone_hash, seq);
+CREATE INDEX IF NOT EXISTS sms_messages_reply ON sms_messages(reply_to, part);
 """
 
 
@@ -43,6 +64,29 @@ def connect(path: str) -> sqlite3.Connection:
 def init(path: str) -> None:
     with closing(connect(path)) as conn:
         conn.executescript(SCHEMA)
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(sms_messages)")
+        }
+        if "conversation_id" not in columns:
+            conn.execute("ALTER TABLE sms_messages ADD COLUMN conversation_id TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS sms_messages_conversation "
+            "ON sms_messages(conversation_id, seq)"
+        )
+
+
+def get_relay_cursor(conn: sqlite3.Connection, name: str) -> int:
+    row = conn.execute("SELECT cursor FROM relay_state WHERE name = ?", (name,)).fetchone()
+    return int(row["cursor"]) if row else 0
+
+
+def set_relay_cursor(conn: sqlite3.Connection, name: str, cursor: int) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO relay_state (name, cursor) VALUES (?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET cursor = excluded.cursor",
+            (name, cursor),
+        )
 
 
 def insert_entries(conn: sqlite3.Connection, entries: list[dict]) -> list[str]:
@@ -62,12 +106,19 @@ def insert_entries(conn: sqlite3.Connection, entries: list[dict]) -> list[str]:
 
 
 def entries_after(
-    conn: sqlite3.Connection, after: int, limit: int, exclude_device: str = ""
+    conn: sqlite3.Connection,
+    after: int,
+    limit: int,
+    exclude_device: str = "",
+    clinic_id: str = "",
 ) -> tuple[list[dict], int, bool]:
-    """Entries that arrived after cursor `after`, oldest first."""
+    """Entries after the cursor; SMS text is returned only to its clinic."""
     rows = conn.execute(
-        "SELECT * FROM ledger WHERE seq > ? AND device != ? ORDER BY seq LIMIT ?",
-        (after, exclude_device, limit + 1),
+        "SELECT * FROM ledger WHERE seq > ? AND device != ? "
+        "AND (kind != 'sms.message' OR ? = '__relay__' "
+        "OR (? != '' AND clinic_id IN (?, '*'))) "
+        "ORDER BY seq LIMIT ?",
+        (after, exclude_device, clinic_id, clinic_id, clinic_id, limit + 1),
     ).fetchall()
     more = len(rows) > limit
     rows = rows[:limit]

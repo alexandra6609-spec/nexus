@@ -22,7 +22,8 @@ export type Transport = {
   /** Fetch entries after `cursor`. */
   pull(
     cursor: number,
-    excludeDevice: string
+    excludeDevice: string,
+    clinicId: string
   ): Promise<{ entries: unknown[]; cursor: number; more: boolean }>;
 };
 
@@ -57,11 +58,12 @@ export function httpTransport(baseUrl: string): Transport {
       });
       return result.ids;
     },
-    pull(cursor, excludeDevice) {
+    pull(cursor, excludeDevice, clinicId) {
       const query = new URLSearchParams({
         after: String(cursor),
         limit: "200",
         exclude_device: excludeDevice,
+        clinic_id: clinicId,
       });
       return call(`/v1/ledger?${query}`);
     },
@@ -128,7 +130,7 @@ export async function syncNow(
 
     let more = true;
     for (let round = 0; more && round < MAX_PULL_ROUNDS; round++) {
-      const result = await transport.pull(getCursor(), getDeviceId());
+      const result = await transport.pull(getCursor(), getDeviceId(), LOCAL_CLINIC_ID);
       mergeRemote(result.entries);
       setCursor(result.cursor);
       more = result.more;

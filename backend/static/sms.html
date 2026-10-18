@@ -56,6 +56,7 @@
       background: var(--bubble); box-shadow: 0 1px 1px rgb(0 0 0 / .08);
     }
     .msg.me { align-self: flex-end; background: var(--mine); color: #fff; }
+    .delivery { display: block; margin-top: 3px; font-size: 11px; opacity: .8; }
     .empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; }
     form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
     #error { color: var(--error); font-size: 13px; padding: 0 12px; min-height: 0; margin: 0; }
@@ -85,55 +86,210 @@
     const send = document.getElementById("send");
     const phone = document.getElementById("phone");
     const error = document.getElementById("error");
+    const OUTBOX_KEY = "nexus.sms.outbox";
+    const CHAT_PREFIX = "nexus.sms.chat.";
+    let sending = false;
+    let retryDelay = 3000;
+    let retryTimer;
 
-    function add(body, mine) {
+    function readJson(key, fallback) {
+      try {
+        const value = localStorage.getItem(key);
+        return value === null ? fallback : JSON.parse(value);
+      } catch {
+        throw new Error("Saved SMS data could not be read from this browser.");
+      }
+    }
+
+    function chatKey(sender) {
+      return CHAT_PREFIX + sender.trim();
+    }
+
+    function readChat(sender) {
+      const messages = readJson(chatKey(sender), []);
+      if (!Array.isArray(messages)) throw new Error("Saved SMS history is invalid.");
+      return messages;
+    }
+
+    function readOutbox() {
+      const queue = readJson(OUTBOX_KEY, []);
+      if (!Array.isArray(queue)) throw new Error("Saved SMS outbox is invalid.");
+      return queue;
+    }
+
+    function add(body, mine, pending) {
       log.querySelector(".empty")?.remove();
       const p = document.createElement("p");
       p.className = mine ? "msg me" : "msg";
       p.textContent = body;
+      if (pending) {
+        const status = document.createElement("span");
+        status.className = "delivery";
+        status.textContent = "Saved on this device; waiting to send";
+        p.appendChild(status);
+      }
       log.appendChild(p);
       log.scrollTop = log.scrollHeight;
     }
 
-    async function sms(body, show = true) {
-      if (!body.trim()) return;
-      send.disabled = true;
-      error.textContent = "";
-      if (show) add(body, true);
+    function renderChat(sender) {
+      log.replaceChildren();
+      const messages = readChat(sender);
+      if (messages.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "No messages yet.";
+        log.appendChild(empty);
+      } else {
+        for (const message of messages) add(message.body, message.mine, message.pending);
+      }
+    }
+
+    function saveChat(sender, messages) {
+      localStorage.setItem(chatKey(sender), JSON.stringify(messages));
+      if (phone.value.trim() === sender.trim()) renderChat(sender);
+    }
+
+    function addMessage(sender, message) {
+      const messages = readChat(sender);
+      const index = messages.findIndex((saved) => saved.id === message.id);
+      if (index === -1) messages.push(message);
+      else messages[index] = { ...messages[index], ...message };
+      saveChat(sender, messages);
+    }
+
+    function makeMessageId() {
+      return globalThis.crypto?.randomUUID?.() ??
+        `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    async function flushOutbox() {
+      if (sending) return;
       try {
-        const response = await fetch("v1/sms/inbound", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ from: phone.value, text: body }),
-        });
-        if (!response.ok) throw new Error(String(response.status));
-        const { replies } = await response.json();
-        for (const reply of replies) add(reply, false);
-      } catch {
-        error.textContent = "No signal: the hub did not answer.";
-      } finally {
-        send.disabled = false;
-        text.focus();
+        if (readOutbox().length === 0) return;
+      } catch (cause) {
+        error.textContent = cause.message;
+        return;
+      }
+
+      sending = true;
+      send.disabled = true;
+      while (true) {
+        let queue;
+        try {
+          queue = readOutbox();
+        } catch (cause) {
+          error.textContent = cause.message;
+          break;
+        }
+        if (queue.length === 0) break;
+        const item = queue[0];
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+          const response = await fetch("/v1/sms/inbound", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: item.sender,
+              text: item.text,
+              messageId: item.id,
+            }),
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`Hub answered ${response.status}`);
+          const result = await response.json();
+          if (!Array.isArray(result.replies)) throw new Error("Hub returned an invalid SMS response.");
+
+          addMessage(item.sender, { id: item.id, body: item.text, mine: true, pending: false });
+          result.replies.forEach((reply, index) => {
+            addMessage(item.sender, {
+              id: `${item.id}:reply:${index}`,
+              body: reply,
+              mine: false,
+              pending: false,
+            });
+          });
+          const latestQueue = readOutbox().filter((queued) => queued.id !== item.id);
+          localStorage.setItem(OUTBOX_KEY, JSON.stringify(latestQueue));
+          retryDelay = 3000;
+          error.textContent = "";
+        } catch (cause) {
+          const detail = cause instanceof Error
+            ? cause.name === "AbortError" ? "request timed out" : cause.message
+            : String(cause);
+          error.textContent =
+            `Saved on this device; delivery failed (${detail}). It will retry automatically.`;
+          retryTimer = setTimeout(flushOutbox, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30000);
+          break;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      sending = false;
+      send.disabled = false;
+      text.focus();
+    }
+
+    function sms(body) {
+      if (!body.trim()) return;
+      try {
+        const sender = phone.value.trim();
+        const item = { id: makeMessageId(), sender, text: body };
+        const queue = readOutbox();
+        queue.push(item);
+        localStorage.setItem(OUTBOX_KEY, JSON.stringify(queue));
+        error.textContent = "";
+        try {
+          addMessage(sender, { id: item.id, body, mine: true, pending: true });
+        } catch (cause) {
+          error.textContent = cause instanceof Error
+            ? cause.message
+            : "Message saved for delivery, but could not save the transcript.";
+        }
+        clearTimeout(retryTimer);
+        void flushOutbox();
+      } catch (cause) {
+        error.textContent = cause instanceof Error
+          ? cause.message
+          : "Could not save this message on the device; it was not sent.";
       }
     }
 
     document.getElementById("form").addEventListener("submit", (event) => {
       event.preventDefault();
       const body = text.value;
+      if (!body.trim()) return;
       text.value = "";
       sms(body);
     });
 
-    document.getElementById("reset").addEventListener("click", () => {
-      log.innerHTML = '<p class="empty">No messages yet.</p>';
-      sms("RESET", false);
-    });
+    document.getElementById("reset").addEventListener("click", () => sms("RESET"));
 
-    // A different number is a different patient: clear the screen.
     phone.addEventListener("change", () => {
-      log.innerHTML = '<p class="empty">No messages yet.</p>';
+      try {
+        renderChat(phone.value);
+        error.textContent = "";
+      } catch (cause) {
+        error.textContent = cause.message;
+      }
     });
 
+    window.addEventListener("online", () => {
+      clearTimeout(retryTimer);
+      void flushOutbox();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void flushOutbox();
+    });
+
+    try {
+      renderChat(phone.value);
+      void flushOutbox();
+    } catch (cause) {
+      error.textContent = cause.message;
+    }
     text.focus();
   </script>
 </body>

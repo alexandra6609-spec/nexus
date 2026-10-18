@@ -68,54 +68,87 @@ NEXUS_DB=backend/nexus_hub.db python3 -m uvicorn main:app --app-dir backend --ho
 The hub writes ledger entries and SMS conversation state to
 `backend/nexus_hub.db`. You can change the database location with `NEXUS_DB`.
 Visit <http://localhost:8000/health>; a healthy server returns `{"ok":true}`.
+Inbound SMS and every generated reply are recorded in the hub database; phone
+numbers are stored only as keyed hashes. After the patient chooses an area,
+the hub relays that conversation to the selected clinic's ledger. The demo
+phone keeps a local outbox and transcript in browser storage and retries queued
+messages after connectivity returns. SMS text may contain sensitive health
+information, so protect the hub database and clinic browser profiles.
+SMS gateway integrations should provide a stable `messageId` on retries to
+prevent a re-delivered message from advancing the conversation twice.
 
-### Terminal 2: clinic frontend
+### Terminal 2: network simulator for Clinic B's backhaul
 
-Configure `nexus-care/.env.local` to use the hub directly:
-
-```dotenv
-NEXT_PUBLIC_CLINIC_ID=A
-NEXT_PUBLIC_SYNC_URL=http://localhost:8000
-NEXT_PUBLIC_SEED_DEMO=true
-NEXT_PUBLIC_SYNC_INTERVAL_SECONDS=5
-```
-
-Use a clinic ID that exists in the active scenario. Then run:
-
-```bash
-cd /path/to/nexus/nexus-care
-npm run dev
-```
-
-Open <http://localhost:3000>. Restart the frontend after changing `.env.local`.
-That file is local configuration; do not commit it.
-
-### Terminal 3: optional network simulator
-
-The simulator is optional. To run the app through the proxy, change
-`NEXT_PUBLIC_SYNC_URL` in `nexus-care/.env.local` to
-`http://localhost:9000`, then restart the frontend. Start the proxy from the
-repository root:
+The proxy shapes only Clinic B's connection to the central hub:
 
 ```bash
 cd /path/to/nexus
 python3 tools/netsim/netsim_proxy.py --listen 9000 --target 127.0.0.1:8000
 ```
 
-Use its interactive keys:
+Press `l` for low bandwidth, `o` for intermittent/no service, `f` for cycling
+flaky service, and `n` to restore normal service.
 
-| Key | Mode |
-| --- | --- |
-| `n` | Normal |
-| `l` | Low bandwidth |
-| `o` | Near-zero, intermittent connectivity |
-| `f` | Flaky connection |
-| `x` | Hard outage |
-| `q` | Quit |
+### Terminal 3: Clinic B local gateway
 
-The proxy only affects traffic sent through port `9000`. For example, open
-<http://localhost:9000/sms> to run the patient SMS simulator through the proxy;
-the direct hub URL on port `8000` bypasses it. See
+This is the local service B can reach even when its upstream backhaul is
+unavailable. Its durable database queues ledger entries for the central hub.
+
+```bash
+cd /path/to/nexus
+NEXUS_DB=backend/clinic_b_hub.db \
+NEXUS_UPSTREAM_URL=http://localhost:9000 \
+NEXUS_RELAY_INTERVAL_SECONDS=1 \
+python3 -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8001
+```
+
+On an actual clinic LAN, use `--host 0.0.0.0` and the gateway's LAN address.
+For this laptop demo, `localhost` keeps both simulated endpoints on the same
+machine.
+
+### Terminal 4: Clinic B dashboard
+
+```bash
+cd /path/to/nexus/nexus-care
+NEXT_DIST_DIR=.next-b \
+NEXT_PUBLIC_CLINIC_ID=B \
+NEXT_PUBLIC_SYNC_URL=http://localhost:8001 \
+NEXT_PUBLIC_SEED_DEMO=false \
+NEXT_PUBLIC_SYNC_INTERVAL_SECONDS=5 \
+npm run dev -- --port 3001
+```
+
+Open <http://localhost:3001> and select **Patients**. The dashboard syncs to
+the local gateway, not the unreliable upstream link.
+
+### Patient phone demo
+
+Open <http://localhost:8001/sms>. This represents SMS arriving at a local
+gateway in B's clinic network. Send a conversation and choose Outpost B. The
+gateway records each text and reply immediately, and the dashboard can show
+the conversation locally even while the proxy is in `o` mode. The gateway
+attempts upstream relay every second in small batches; during `f`, entries
+can cross during a spark if the complete request fits that window. If a spark
+is missed, they remain queued for the next one. `o` is intermittent, so
+delivery timing is not guaranteed while it remains selected. When backhaul
+returns, queued records are forwarded to the central hub.
+
+For a third browser window showing the central/A side, optionally run the
+dashboard directly against port 8000:
+
+```bash
+cd /path/to/nexus/nexus-care
+NEXT_DIST_DIR=.next-a \
+NEXT_PUBLIC_CLINIC_ID=A \
+NEXT_PUBLIC_SYNC_URL=http://localhost:8000 \
+NEXT_PUBLIC_SEED_DEMO=false \
+npm run dev -- --port 3000
+```
+
+Then open <http://localhost:3000>. The proxy affects only traffic through port
+`9000`; SMS intake to the local B gateway and dashboard sync on port `8001`
+stay available in this demo. The local gateway's HTTP intake simulates an
+attached SMS gateway; actual carrier/modem integration is not included. See
 [`tools/netsim/README.md`](tools/netsim/README.md) for mode details and Linux
 `tc netem` instructions.
 
@@ -155,11 +188,11 @@ public internet.
 - Clearing the hub database does not clear browser data, and clearing browser
   data does not clear the hub database.
 
-To reset the hub's ledger and SMS sessions, stop the backend first, then run
-this **only for the demo database**:
+To reset the hub's ledger, SMS sessions, and recorded SMS messages, stop the
+backend first, then run this **only for the demo database**:
 
 ```bash
-sqlite3 backend/nexus_hub.db 'DELETE FROM ledger; DELETE FROM sms_sessions; DELETE FROM sqlite_sequence WHERE name = "ledger";'
+sqlite3 backend/nexus_hub.db 'DELETE FROM ledger; DELETE FROM sms_sessions; DELETE FROM sms_messages; DELETE FROM sqlite_sequence WHERE name IN ("ledger", "sms_messages");'
 ```
 
 The clinic app may seed demo entries again when `NEXT_PUBLIC_SEED_DEMO=true`.
