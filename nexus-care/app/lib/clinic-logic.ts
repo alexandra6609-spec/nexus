@@ -67,3 +67,39 @@ const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 export function isStale(updatedAt: number | null) {
   return updatedAt === null || Date.now() - updatedAt > STALE_AFTER_MS;
 }
+
+export function isRecent(timestamp: number, minutes = 30) {
+  return Date.now() - timestamp < minutes * 60_000;
+}
+
+export type CasualtyPlan = {
+  plan: { clinic: Clinic; count: number; minutes: number }[];
+  unplaced: number;
+};
+
+export function planCasualties(count: number, originId: string, clinics: Clinic[]): CasualtyPlan {
+  const options = clinics
+    .filter((clinic) => clinic.updatedAt !== null && freeBeds(clinic) > 0)
+    .map((clinic) => ({
+      clinic,
+      minutes: clinic.id === originId ? 0 : WORLD.minutes(originId, clinic.id),
+      free: freeBeds(clinic),
+    }))
+    .filter((option) => Number.isFinite(option.minutes))
+    .sort((a, b) => a.minutes - b.minutes);
+
+  let left = count;
+  const plan: CasualtyPlan["plan"] = [];
+  for (const option of options) {
+    if (left <= 0) break;
+    const take = Math.min(left, option.free);
+    plan.push({ clinic: option.clinic, count: take, minutes: option.minutes });
+    left -= take;
+  }
+  return { plan, unplaced: left };
+}
+
+/** SMS tokens stop fast-tracking after the hub's validity window. */
+export function isExpired(expiresAt: number) {
+  return Date.now() >= expiresAt;
+}

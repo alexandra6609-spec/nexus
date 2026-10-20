@@ -4,17 +4,29 @@ import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import AlternativeClinics from "./AlternativeClinics";
 import CoordinationRequests from "./CoordinationRequests";
-import type { Clinic, Transfer } from "../lib/types";
+import SmsArrivals from "./SmsArrivals";
+import type { Clinic, Transfer, TriageToken } from "../lib/types";
 
 type Props = {
   local: Clinic;
   clinics: Clinic[];
   transfers: Transfer[];
+  tokens: TriageToken[];
   onRequest: (clinic: Clinic) => Promise<void>;
+  onArrived: (token: TriageToken) => Promise<void>;
+  onFulfill: (to: string, resource: string, requestId: string) => Promise<void>;
 };
 
-/** Triage: where to send overflow, and the requests already raised. */
-export default function TriageView({ local, clinics, transfers, onRequest }: Props) {
+/** Triage: SMS patients on their way, where to send overflow, and requests raised. */
+export default function TriageView({
+  local,
+  clinics,
+  transfers,
+  tokens,
+  onRequest,
+  onArrived,
+  onFulfill,
+}: Props) {
   const [notice, setNotice] = useState("");
 
   return (
@@ -25,6 +37,7 @@ export default function TriageView({ local, clinics, transfers, onRequest }: Pro
           {notice}
         </p>
       )}
+      <SmsArrivals local={local} clinics={clinics} tokens={tokens} onArrived={onArrived} />
       <AlternativeClinics
         local={local}
         clinics={clinics}
@@ -35,7 +48,12 @@ export default function TriageView({ local, clinics, transfers, onRequest }: Pro
           );
         }}
       />
-      <CoordinationRequests transfers={transfers} clinics={clinics} />
+      <CoordinationRequests
+        transfers={transfers}
+        clinics={clinics}
+        local={local}
+        onFulfill={onFulfill}
+      />
     </>
   );
 }

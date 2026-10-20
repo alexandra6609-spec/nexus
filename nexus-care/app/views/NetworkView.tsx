@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { BedDouble, Building2, Landmark, Wifi, WifiOff } from "lucide-react";
+import { BedDouble, Building2, Landmark, PackageCheck, Wifi, WifiOff } from "lucide-react";
 import { ResourceChip } from "../components/ResourceStatus";
-import { LevelPill, secondaryButtonClass } from "../components/ui";
+import { buttonClass, LevelPill, secondaryButtonClass } from "../components/ui";
 import {
   bedCapacity,
   formatTime,
@@ -15,18 +15,21 @@ import {
   statusOf,
   travelFrom,
 } from "../lib/clinic-logic";
-import { SCENARIO, WORLD } from "../lib/directory";
+import { SCENARIO, TRANSFER_RESOURCES, WORLD } from "../lib/directory";
 import type { Clinic } from "../lib/types";
 
 type Props = {
   clinics: Clinic[];
   localClinicId: string;
   onEditLocal: () => void;
+  onSendSupply: (to: string, resource: string) => Promise<void>;
 };
 
 /** Clinic Network: what this device last heard about the places around it. */
-export default function NetworkView({ clinics, localClinicId, onEditLocal }: Props) {
+export default function NetworkView({ clinics, localClinicId, onEditLocal, onSendSupply }: Props) {
   const [scope, setScope] = useState<"network" | "all">("network");
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Record<string, string>>({});
 
   const byId = new Map(clinics.map((clinic) => [clinic.id, clinic]));
   const local = byId.get(localClinicId);
@@ -85,6 +88,17 @@ export default function NetworkView({ clinics, localClinicId, onEditLocal }: Pro
           const isOver = hasBeds && occupied(clinic) > bedCapacity(clinic);
           const stale = !isLocal && isStale(clinic.updatedAt);
           const status = statusOf(clinic);
+          const neededSupplies = isLocal
+            ? []
+            : status.resources.filter(
+                (resourceStatus) =>
+                  clinic.updatedAt !== null &&
+                  resourceStatus.alertable &&
+                  TRANSFER_RESOURCES.some((resource) => resource.id === resourceStatus.resource.id) &&
+                  (local?.quantities[resourceStatus.resource.id] ?? 0) > 0 &&
+                  (local?.quantities[resourceStatus.resource.id] ?? 0) >
+                    (clinic.quantities[resourceStatus.resource.id] ?? 0)
+              );
           const Icon = clinic.kind === "hospital" ? Landmark : Building2;
 
           return (
@@ -173,6 +187,52 @@ export default function NetworkView({ clinics, localClinicId, onEditLocal }: Pro
                     <ResourceChip key={r.resource.id} status={r} />
                   ))}
               </div>
+
+              {neededSupplies.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                  {neededSupplies.map(({ resource }) => {
+                    const key = `${clinic.id}:${resource.id}`;
+                    return (
+                      <button
+                        key={resource.id}
+                        type="button"
+                        className={buttonClass}
+                        disabled={busyKey === key}
+                        onClick={() => {
+                          setBusyKey(key);
+                          setMessages((current) => ({ ...current, [key]: "" }));
+                          void onSendSupply(clinic.id, resource.id)
+                            .then(() =>
+                              setMessages((current) => ({
+                                ...current,
+                                [key]: `1 ${resource.unit ?? "unit"} sent.`,
+                              }))
+                            )
+                            .catch((error: unknown) =>
+                              setMessages((current) => ({
+                                ...current,
+                                [key]:
+                                  error instanceof Error ? error.message : "Could not send supply.",
+                              }))
+                            )
+                            .finally(() => setBusyKey(null));
+                        }}
+                      >
+                        <PackageCheck size={14} />
+                        Send 1 {resource.short ?? resource.label} to {clinic.id}
+                      </button>
+                    );
+                  })}
+                  {neededSupplies.map(({ resource }) => {
+                    const key = `${clinic.id}:${resource.id}`;
+                    return messages[key] ? (
+                      <span key={`${key}:message`} role="status" className="text-xs text-slate-600">
+                        {messages[key]}
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
 
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs">
                 <span

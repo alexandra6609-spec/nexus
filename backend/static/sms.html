@@ -1,0 +1,296 @@
+<!doctype html>
+<!--
+  DEMO ONLY: stands in for a patient's basic phone. Served by the hub at /sms,
+  separate from the clinic app. It posts to /v1/sms/inbound exactly what a GSM
+  modem or SMS gateway will post later. No external files: works on a LAN
+  with no internet.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patient Phone</title>
+  <style>
+    :root {
+      --bg: #e2e8f0; --phone: #0f172a; --screen: #f1f5f9; --bubble: #ffffff;
+      --text: #1e293b; --muted: #64748b; --mine: #0f766e; --line: #cbd5e1; --error: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #020617; --phone: #334155; --screen: #0f172a; --bubble: #1e293b;
+        --text: #e2e8f0; --muted: #94a3b8; --mine: #0d9488; --line: #334155; --error: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 12px; padding: 16px; background: var(--bg); color: var(--text);
+      font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .note { max-width: 380px; text-align: center; font-size: 13px; color: var(--muted); margin: 0; }
+    .phone {
+      width: 100%; max-width: 380px; height: min(720px, calc(100vh - 100px));
+      display: flex; flex-direction: column; border: 10px solid var(--phone);
+      border-radius: 32px; background: var(--screen); overflow: hidden;
+    }
+    header {
+      display: flex; gap: 8px; align-items: center; padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    header label { font-size: 12px; color: var(--muted); }
+    input, button { font: inherit; }
+    input {
+      flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+      background: var(--bubble); color: var(--text);
+    }
+    #phone { font-family: ui-monospace, monospace; font-size: 13px; padding: 6px 8px; }
+    button {
+      border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer;
+      background: var(--mine); color: #fff; font-weight: 600;
+    }
+    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    button:disabled { opacity: .5; cursor: default; }
+    #log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .msg {
+      max-width: 85%; padding: 8px 12px; border-radius: 14px; white-space: pre-line;
+      background: var(--bubble); box-shadow: 0 1px 1px rgb(0 0 0 / .08);
+    }
+    .msg.me { align-self: flex-end; background: var(--mine); color: #fff; }
+    .delivery { display: block; margin-top: 3px; font-size: 11px; opacity: .8; }
+    .empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; }
+    form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+    #error { color: var(--error); font-size: 13px; padding: 0 12px; min-height: 0; margin: 0; }
+  </style>
+</head>
+<body>
+  <p class="note">Demo patient phone. Text anything to start, then reply with numbers.
+    Demo triage rules only, not medical advice.</p>
+
+  <main class="phone">
+    <header>
+      <label for="phone">From</label>
+      <input id="phone" value="+15550001" autocomplete="off">
+      <button type="button" class="ghost" id="reset" title="Start over">Reset</button>
+    </header>
+    <div id="log" aria-live="polite"><p class="empty">No messages yet.</p></div>
+    <p id="error" role="alert"></p>
+    <form id="form">
+      <input id="text" maxlength="160" placeholder="Text message" autocomplete="off" aria-label="Text message">
+      <button id="send" type="submit">Send</button>
+    </form>
+  </main>
+
+  <script>
+    const log = document.getElementById("log");
+    const text = document.getElementById("text");
+    const send = document.getElementById("send");
+    const phone = document.getElementById("phone");
+    const error = document.getElementById("error");
+    const OUTBOX_KEY = "nexus.sms.outbox";
+    const CHAT_PREFIX = "nexus.sms.chat.";
+    let sending = false;
+    let retryDelay = 3000;
+    let retryTimer;
+
+    function readJson(key, fallback) {
+      try {
+        const value = localStorage.getItem(key);
+        return value === null ? fallback : JSON.parse(value);
+      } catch {
+        throw new Error("Saved SMS data could not be read from this browser.");
+      }
+    }
+
+    function chatKey(sender) {
+      return CHAT_PREFIX + sender.trim();
+    }
+
+    function readChat(sender) {
+      const messages = readJson(chatKey(sender), []);
+      if (!Array.isArray(messages)) throw new Error("Saved SMS history is invalid.");
+      return messages;
+    }
+
+    function readOutbox() {
+      const queue = readJson(OUTBOX_KEY, []);
+      if (!Array.isArray(queue)) throw new Error("Saved SMS outbox is invalid.");
+      return queue;
+    }
+
+    function add(body, mine, pending) {
+      log.querySelector(".empty")?.remove();
+      const p = document.createElement("p");
+      p.className = mine ? "msg me" : "msg";
+      p.textContent = body;
+      if (pending) {
+        const status = document.createElement("span");
+        status.className = "delivery";
+        status.textContent = "Saved on this device; waiting to send";
+        p.appendChild(status);
+      }
+      log.appendChild(p);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function renderChat(sender) {
+      log.replaceChildren();
+      const messages = readChat(sender);
+      if (messages.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "No messages yet.";
+        log.appendChild(empty);
+      } else {
+        for (const message of messages) add(message.body, message.mine, message.pending);
+      }
+    }
+
+    function saveChat(sender, messages) {
+      localStorage.setItem(chatKey(sender), JSON.stringify(messages));
+      if (phone.value.trim() === sender.trim()) renderChat(sender);
+    }
+
+    function addMessage(sender, message) {
+      const messages = readChat(sender);
+      const index = messages.findIndex((saved) => saved.id === message.id);
+      if (index === -1) messages.push(message);
+      else messages[index] = { ...messages[index], ...message };
+      saveChat(sender, messages);
+    }
+
+    function makeMessageId() {
+      return globalThis.crypto?.randomUUID?.() ??
+        `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    async function flushOutbox() {
+      if (sending) return;
+      try {
+        if (readOutbox().length === 0) return;
+      } catch (cause) {
+        error.textContent = cause.message;
+        return;
+      }
+
+      sending = true;
+      send.disabled = true;
+      while (true) {
+        let queue;
+        try {
+          queue = readOutbox();
+        } catch (cause) {
+          error.textContent = cause.message;
+          break;
+        }
+        if (queue.length === 0) break;
+        const item = queue[0];
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+          const response = await fetch("/v1/sms/inbound", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: item.sender,
+              text: item.text,
+              messageId: item.id,
+            }),
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`Hub answered ${response.status}`);
+          const result = await response.json();
+          if (!Array.isArray(result.replies)) throw new Error("Hub returned an invalid SMS response.");
+
+          addMessage(item.sender, { id: item.id, body: item.text, mine: true, pending: false });
+          result.replies.forEach((reply, index) => {
+            addMessage(item.sender, {
+              id: `${item.id}:reply:${index}`,
+              body: reply,
+              mine: false,
+              pending: false,
+            });
+          });
+          const latestQueue = readOutbox().filter((queued) => queued.id !== item.id);
+          localStorage.setItem(OUTBOX_KEY, JSON.stringify(latestQueue));
+          retryDelay = 3000;
+          error.textContent = "";
+        } catch (cause) {
+          const detail = cause instanceof Error
+            ? cause.name === "AbortError" ? "request timed out" : cause.message
+            : String(cause);
+          error.textContent =
+            `Saved on this device; delivery failed (${detail}). It will retry automatically.`;
+          retryTimer = setTimeout(flushOutbox, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30000);
+          break;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      sending = false;
+      send.disabled = false;
+      text.focus();
+    }
+
+    function sms(body) {
+      if (!body.trim()) return;
+      try {
+        const sender = phone.value.trim();
+        const item = { id: makeMessageId(), sender, text: body };
+        const queue = readOutbox();
+        queue.push(item);
+        localStorage.setItem(OUTBOX_KEY, JSON.stringify(queue));
+        error.textContent = "";
+        try {
+          addMessage(sender, { id: item.id, body, mine: true, pending: true });
+        } catch (cause) {
+          error.textContent = cause instanceof Error
+            ? cause.message
+            : "Message saved for delivery, but could not save the transcript.";
+        }
+        clearTimeout(retryTimer);
+        void flushOutbox();
+      } catch (cause) {
+        error.textContent = cause instanceof Error
+          ? cause.message
+          : "Could not save this message on the device; it was not sent.";
+      }
+    }
+
+    document.getElementById("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const body = text.value;
+      if (!body.trim()) return;
+      text.value = "";
+      sms(body);
+    });
+
+    document.getElementById("reset").addEventListener("click", () => sms("RESET"));
+
+    phone.addEventListener("change", () => {
+      try {
+        renderChat(phone.value);
+        error.textContent = "";
+      } catch (cause) {
+        error.textContent = cause.message;
+      }
+    });
+
+    window.addEventListener("online", () => {
+      clearTimeout(retryTimer);
+      void flushOutbox();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void flushOutbox();
+    });
+
+    try {
+      renderChat(phone.value);
+      void flushOutbox();
+    } catch (cause) {
+      error.textContent = cause.message;
+    }
+    text.focus();
+  </script>
+</body>
+</html>

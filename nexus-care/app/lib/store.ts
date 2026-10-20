@@ -1,8 +1,9 @@
-import { LOCAL_CLINIC_ID, SEED_DEMO } from "./directory";
-import { deriveState, isLedgerEntry } from "./ledger";
+import { LOCAL_CLINIC_ID, SEED_DEMO, TRANSFER_RESOURCES } from "./directory";
+import { deriveState, isLedgerEntry, isPriorityStockEntry } from "./ledger";
 import * as db from "./local-db";
 import { demoEntries } from "./seed";
 import type {
+  AlertData,
   ClinicId,
   LedgerEntry,
   StockReport,
@@ -10,6 +11,7 @@ import type {
   StoredEntry,
   SyncState,
   TransferStatus,
+  TriageToken,
 } from "./types";
 
 /**
@@ -42,6 +44,7 @@ const initialState: StoreState = {
   deviceId: "",
   ...deriveState([]),
   pendingCount: 0,
+  autoPendingCount: 0,
   sync: idleSync,
 };
 
@@ -59,13 +62,21 @@ export function subscribe(listener: () => void) {
 
 function publish(patch: Partial<StoreState> = {}) {
   let pendingCount = 0;
-  for (const entry of entries.values()) if (entry.synced === 0) pendingCount++;
+  let autoPendingCount = 0;
+  for (const entry of entries.values()) {
+    if (entry.synced !== 0) continue;
+    pendingCount++;
+    if (entry.kind !== "stock.declared" || isPriorityStockEntry(entry)) {
+      autoPendingCount++;
+    }
+  }
   state = {
     ...state,
     ...patch,
     ...deriveState(entries.values()),
     deviceId,
     pendingCount,
+    autoPendingCount,
   };
   listeners.forEach((listener) => listener());
 }
@@ -179,14 +190,64 @@ export async function setTransferStatus(
   commit(author("transfer.status", { transferId, status }));
 }
 
+export async function transferSupply(
+  to: ClinicId,
+  resource: string,
+  quantity = 1,
+  links: { requestId?: string; alertId?: string } = {}
+): Promise<LedgerEntry> {
+  await ensureInit();
+  if (to === LOCAL_CLINIC_ID) throw new Error("Choose a different clinic to receive the supply.");
+  if (!TRANSFER_RESOURCES.some((item) => item.id === resource)) {
+    throw new Error("That resource cannot be transferred.");
+  }
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error("Transfer quantity must be a positive whole number.");
+  }
+  const sender = state.clinics.find((clinic) => clinic.id === LOCAL_CLINIC_ID);
+  const available = sender?.quantities[resource] ?? 0;
+  if (available < quantity) throw new Error("Not enough reported stock to fulfill this transfer.");
+
+  const entry = author("supply.transferred", {
+    from: LOCAL_CLINIC_ID,
+    to,
+    resource,
+    quantity,
+    ...links,
+  });
+  commit(entry);
+  return strip(entry);
+}
+
+export async function sendEmergency(data: AlertData): Promise<LedgerEntry> {
+  await ensureInit();
+  const entry = author("alert.emergency", data);
+  commit(entry);
+  return strip(entry);
+}
+
+/** A patient with an SMS token has arrived at this clinic's desk. */
+export async function markArrived(token: TriageToken) {
+  await ensureInit();
+  commit(author("triage.arrived", { tokenId: token.id, code: token.code }));
+}
+
 // ------------------------------------------------------------ sync support
 
 const strip = ({ synced: _synced, ...entry }: StoredEntry): LedgerEntry =>
   entry as LedgerEntry;
 
 /** Own entries the hub has not acknowledged yet. */
-export function getPending(): LedgerEntry[] {
-  return [...entries.values()].filter((e) => e.synced === 0).map(strip);
+export function getPending(includeRoutineStock = false): LedgerEntry[] {
+  return [...entries.values()]
+    .filter(
+      (entry) =>
+        entry.synced === 0 &&
+        (includeRoutineStock ||
+          entry.kind !== "stock.declared" ||
+          isPriorityStockEntry(entry))
+    )
+    .map(strip);
 }
 
 /** Everything on this device. A relay (truck, radio) can carry other clinics' data too. */

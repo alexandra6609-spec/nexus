@@ -32,6 +32,62 @@ export type Transfer = {
   createdAt: number;
 };
 
+/** SMS triage: RED = go now, YELLOW = see a clinic today. Issued by the hub. */
+export type TriageLevel = "RED" | "YELLOW";
+
+export type AlertKind = "crisis" | "mass-casualty";
+
+export type AlertData = {
+  alert: AlertKind;
+  resource: string | null;
+  casualties: number | null;
+  note: string;
+};
+
+export type EmergencyAlert = AlertData & {
+  id: string;
+  from: ClinicId;
+  ts: number;
+  fulfilled?: boolean;
+};
+
+/** One SMS question and the patient's answer, in words. Built by the hub. */
+export type TriageInput = { question: string; answer: string };
+
+export type TriageTokenData = {
+  code: string;
+  level: TriageLevel;
+  clinic: ClinicId | null; // null: patient's area not listed, any clinic may receive them
+  area: string | null;
+  summary: string;
+  ambulance: boolean | null; // null: not asked, or the patient did not answer
+  inputs: TriageInput[]; // every answer the patient gave by SMS
+  expiresAt: number;
+};
+
+export type TriageToken = TriageTokenData & {
+  id: string;
+  issuedAt: number;
+  arrived: { clinicId: ClinicId; at: number } | null;
+};
+
+export type SmsMessageData = {
+  conversationId: string;
+  messageId: string;
+  replyTo: string | null;
+  phoneHash: string;
+  direction: "inbound" | "outbound";
+  part: number;
+  body: string;
+};
+
+export type SmsMessage = SmsMessageData & {
+  id: string;
+  clinicId: ClinicId;
+  ts: number;
+  sequence: number;
+};
+
 /**
  * Ledger entries are immutable and globally unique by `id`, so merging two
  * ledgers is a set union. Duplicates (same id) are ignored, which makes every
@@ -54,6 +110,24 @@ export type LedgerEntry =
   | (EntryBase & {
       kind: "transfer.status";
       data: { transferId: string; status: TransferStatus };
+    })
+  | (EntryBase & {
+      kind: "supply.transferred";
+      data: {
+        from: ClinicId;
+        to: ClinicId;
+        resource: string;
+        quantity: number;
+        requestId?: string;
+        alertId?: string;
+      };
+    })
+  | (EntryBase & { kind: "triage.token"; data: TriageTokenData })
+  | (EntryBase & { kind: "sms.message"; data: SmsMessageData })
+  | (EntryBase & { kind: "alert.emergency"; data: AlertData })
+  | (EntryBase & {
+      kind: "triage.arrived";
+      data: { tokenId: string; code: string };
     });
 
 /** What is stored locally: the entry plus whether the hub has acknowledged it. */
@@ -72,6 +146,10 @@ export type StoreState = {
   deviceId: string;
   clinics: Clinic[];
   transfers: Transfer[];
+  tokens: TriageToken[];
+  smsMessages: SmsMessage[];
+  alerts: EmergencyAlert[];
   pendingCount: number;
+  autoPendingCount: number;
   sync: SyncState;
 };

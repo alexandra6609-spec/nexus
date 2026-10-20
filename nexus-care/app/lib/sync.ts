@@ -1,4 +1,4 @@
-import { LOCAL_CLINIC_ID, SYNC_URL } from "./directory";
+import { ALERT_URL, LOCAL_CLINIC_ID, SYNC_URL } from "./directory";
 import {
   getAllEntries,
   getCursor,
@@ -22,7 +22,8 @@ export type Transport = {
   /** Fetch entries after `cursor`. */
   pull(
     cursor: number,
-    excludeDevice: string
+    excludeDevice: string,
+    clinicId: string
   ): Promise<{ entries: unknown[]; cursor: number; more: boolean }>;
 };
 
@@ -57,11 +58,12 @@ export function httpTransport(baseUrl: string): Transport {
       });
       return result.ids;
     },
-    pull(cursor, excludeDevice) {
+    pull(cursor, excludeDevice, clinicId) {
       const query = new URLSearchParams({
         after: String(cursor),
         limit: "200",
         exclude_device: excludeDevice,
+        clinic_id: clinicId,
       });
       return call(`/v1/ledger?${query}`);
     },
@@ -73,16 +75,52 @@ export function defaultTransport(): Transport | null {
   return SYNC_URL ? httpTransport(SYNC_URL) : null;
 }
 
+export async function sendUrgent(entry: LedgerEntry): Promise<boolean> {
+  if (!ALERT_URL) return false;
+  const transport = httpTransport(ALERT_URL);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const accepted = await transport.push([entry]);
+      markSynced(accepted.filter((id) => id === entry.id));
+      return accepted.includes(entry.id);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  return false;
+}
+
+export async function pullAlerts(): Promise<void> {
+  if (!ALERT_URL) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(`${ALERT_URL.replace(/\/$/, "")}/v1/alerts?minutes=30`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) return;
+    const body = (await response.json()) as { entries?: unknown };
+    if (Array.isArray(body.entries)) mergeRemote(body.entries);
+  } catch {
+    // The normal sync will catch up when a link allows.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 let running = false;
 
 /** One push-then-pull round. Never throws; the outcome lands in store state. */
-export async function syncNow(transport: Transport) {
+export async function syncNow(
+  transport: Transport,
+  options: { includeRoutineStock?: boolean } = {}
+) {
   if (running) return;
   running = true;
   setSync({ syncing: true, lastAttemptAt: Date.now(), error: null });
 
   try {
-    const pending = getPending();
+    const pending = getPending(options.includeRoutineStock);
     for (let i = 0; i < pending.length; i += PUSH_CHUNK) {
       const chunk = pending.slice(i, i + PUSH_CHUNK);
       const sent = new Set(chunk.map((entry) => entry.id));
@@ -92,7 +130,7 @@ export async function syncNow(transport: Transport) {
 
     let more = true;
     for (let round = 0; more && round < MAX_PULL_ROUNDS; round++) {
-      const result = await transport.pull(getCursor(), getDeviceId());
+      const result = await transport.pull(getCursor(), getDeviceId(), LOCAL_CLINIC_ID);
       mergeRemote(result.entries);
       setCursor(result.cursor);
       more = result.more;

@@ -1,0 +1,38 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hub",
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": [
+        "main:app",
+        "--app-dir",
+        "backend",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "env": {
+        "NEXUS_DB": "backend/nexus_hub.db"
+      },
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "nexus-care"
+      ],
+      "env": {
+        "NEXT_PUBLIC_SYNC_URL": "http://localhost:8000",
+        "NEXT_PUBLIC_CLINIC_ID": "C",
+        "NEXT_PUBLIC_SYNC_INTERVAL_SECONDS": "5"
+      },
+      "port": 3000
+    }
+  ]
+}
