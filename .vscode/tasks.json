@@ -1,0 +1,110 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Nexus: backend (8000)",
+			"type": "shell",
+			"command": "env",
+			"args": [
+				"NEXUS_DB=backend/nexus_hub.db",
+				"backend/.venv/bin/python",
+				"-m",
+				"uvicorn",
+				"main:app",
+				"--app-dir",
+				"backend",
+				"--host",
+				"127.0.0.1",
+				"--port",
+				"8000"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Nexus: Clinic A (3000)",
+			"type": "shell",
+			"command": "env",
+			"args": [
+				"NEXT_PUBLIC_CLINIC_ID=A",
+				"NEXT_PUBLIC_SYNC_URL=http://localhost:9000",
+				"NEXT_PUBLIC_SYNC_INTERVAL_SECONDS=5",
+				"NEXT_PUBLIC_SEED_DEMO=true",
+				"npm",
+				"--prefix",
+				"nexus-care",
+				"run",
+				"dev",
+				"--",
+				"--hostname",
+				"127.0.0.1",
+				"--port",
+				"3000"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Nexus: Clinic B (3001)",
+			"type": "shell",
+			"command": "env",
+			"args": [
+				"NEXT_PUBLIC_CLINIC_ID=B",
+				"NEXT_PUBLIC_SYNC_URL=http://localhost:9000",
+				"NEXT_PUBLIC_SYNC_INTERVAL_SECONDS=5",
+				"NEXT_PUBLIC_SEED_DEMO=true",
+				"NEXT_DIST_DIR=.next-clinic-b",
+				"npm",
+				"--prefix",
+				"nexus-care",
+				"run",
+				"dev",
+				"--",
+				"--hostname",
+				"127.0.0.1",
+				"--port",
+				"3001"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Nexus: Netsim proxy (9000)",
+			"type": "shell",
+			"command": "python3",
+			"args": [
+				"tools/netsim/netsim_proxy.py",
+				"--listen",
+				"9000",
+				"--target",
+				"127.0.0.1:8000"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Nexus: Clinic B isolated (3001)",
+			"type": "shell",
+			"command": "env",
+			"args": [
+				"NEXT_PUBLIC_CLINIC_ID=B",
+				"NEXT_PUBLIC_SYNC_URL=http://localhost:9000",
+				"NEXT_PUBLIC_SYNC_INTERVAL_SECONDS=5",
+				"NEXT_PUBLIC_SEED_DEMO=true",
+				"NEXT_DIST_DIR=.next-clinic-b",
+				"npm",
+				"--prefix",
+				"nexus-care",
+				"run",
+				"dev",
+				"--",
+				"--hostname",
+				"127.0.0.1",
+				"--port",
+				"3001"
+			],
+			"isBackground": true,
+			"group": "build"
+		}
+	]
+}
